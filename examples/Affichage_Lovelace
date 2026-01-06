@@ -4,8 +4,6 @@
   - type: sections
     title: Estimation des jours TEMPO
     path: tempo
-    subview: true
-    theme: amoled
     sections:
       - type: grid
         cards:
