@@ -11,6 +11,9 @@ Ce projet fournit une “météo Tempo” (bleu / blanc / rouge) pour **J+1 à J
 
 ---
 
+<img width="1794" height="889" alt="image" src="https://github.com/user-attachments/assets/2e16d2ac-2dd7-4666-b32c-95f94cc006bf" />
+
+
 ## Fonctionnalités
 
 - Prévision **Tempo J+1 → J+6** : `bleu`, `blanc`, `rouge`
