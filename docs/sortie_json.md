@@ -22,6 +22,7 @@ Chaque bloc `J+n` est **autosuffisant** et décrit :
 "friendly_name": "tempo_prevision_simple"
 }
 
+<img width="710" height="791" alt="image" src="https://github.com/user-attachments/assets/33658858-5b01-4373-a40a-d351c51cab41" />
 
 ---
 
