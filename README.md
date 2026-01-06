@@ -60,7 +60,7 @@ Ce projet fournit une “météo Tempo” (bleu / blanc / rouge) pour **J+1 à J
 4) Ajouter une automatisation pour effectuer la mise à jour régulière des valeurs
     - Possibilité de ne pas en faire mais d'ajouter à la place un scan_interval au capteur command_line tempo_prevision_simple
 
-    - **Exemple d'automatisation prête à copier/coller et utilisée** [`examples/Maj_prevision`](examples/Maj_prevision) 
+    - **Exemple d'automatisation prête à copier/coller et utilisée** [`examples/Maj_previsions`](examples/Maj_previsions) 
        - Effectue les mises à jour aux moments de la journée où RTE publie les données qui nous intéressent avec nouvelle tentative en cas de non réponse de l'API
 6) Ajouter l'affichage dans son tableau de bord Home assistant
 
