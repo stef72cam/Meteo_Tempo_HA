@@ -12,7 +12,7 @@ Chaque bloc `J+n` est **autosuffisant** et décrit :
 
 ---
 
-## 🧱 Structure générale
+## Structure générale
 
 {
 "J+1": { ... },
@@ -52,7 +52,7 @@ Chaque bloc `J+n` est **autosuffisant** et décrit :
 
 ---
 
-## ⚡ Données énergétiques (MW)
+## Données énergétiques (MW)
 
 ### `c_mw`
 - **Type** : `number`
@@ -208,7 +208,7 @@ Champs :
 
 ---
 
-## 🕒 Métadonnées globales
+## Métadonnées globales
 
 ### `generated_at`
 - **Type** : timestamp ISO-8601
