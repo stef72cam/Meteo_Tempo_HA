@@ -1,0 +1,46 @@
+alias: Tempo - Mise à jour prévisions
+description: ""
+triggers:
+  - at: "00:00:45"
+    trigger: time
+  - at: "01:10:45"
+    trigger: time
+  - at: "06:45:30"
+    trigger: time
+  - at: "10:45:30"
+    trigger: time
+  - at: "14:45:30"
+    trigger: time
+  - at: "18:45:30"
+    trigger: time
+  - at: "21:45:30"
+    trigger: time
+actions:
+  - target:
+      entity_id: sensor.tempo_prevision_simple
+    action: homeassistant.update_entity
+    data:
+      entity_id:
+        - sensor.tempo_prevision_simple
+  - delay:
+      hours: 0
+      minutes: 0
+      seconds: 3
+      milliseconds: 0
+  - if:
+      - condition: not
+        conditions:
+          - condition: state
+            entity_id: sensor.tempo_prevision_simple
+            state:
+              - ok
+    then:
+      - target:
+          entity_id: sensor.tempo_prevision_simple
+        action: homeassistant.update_entity
+        data:
+          entity_id:
+            - sensor.tempo_prevision_simple
+    else:
+      - stop: Fin
+mode: single

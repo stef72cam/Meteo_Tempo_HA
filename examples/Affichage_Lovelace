@@ -1,0 +1,547 @@
+#Affichage des prévisions dans un dashboard
+
+
+  - type: sections
+    title: Estimation des jours TEMPO
+    path: tempo
+    subview: true
+    theme: amoled
+    sections:
+      - type: grid
+        cards:
+          - type: vertical-stack
+            cards:
+              - type: horizontal-stack
+                cards:
+                  - type: markdown
+                    content: |2
+
+                        {% set d = (now().date() + timedelta(days=1)) %}
+                        {% set jours = ["lundi","mardi","mercredi","jeudi","vendredi","samedi","dimanche"] %}
+                        {% set mois = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"] %}
+
+                        ### Prévision pour le {{ jours[d.weekday()] }} {{ d.day }} {{ mois[d.month-1] }}
+                  - type: custom:button-card
+                    entity: sensor.tempo_niveau_tension_j_1
+                    show_name: false
+                    show_state: false
+                    show_icon: false
+                    styles:
+                      card:
+                        - width: 18px
+                        - height: 18px
+                        - border-radius: 50%
+                        - padding: 0
+                        - margin: 10px 0 0 0
+                        - box-shadow: none
+                    state:
+                      - value: vert
+                        styles:
+                          card:
+                            - background-color: '#00c853'
+                      - value: jaune
+                        styles:
+                          card:
+                            - background-color: '#FFFF00'
+                      - value: orange
+                        styles:
+                          card:
+                            - background-color: '#ffa000'
+                      - value: rouge
+                        styles:
+                          card:
+                            - background-color: '#ff1744'
+                      - value: violet
+                        styles:
+                          card:
+                            - background-color: '#7f00ff'
+              - type: markdown
+                content: >
+                  {% set score = states('sensor.tempo_j1_conf_score')|int(0) %}
+                  {% set label = states('sensor.tempo_j1_conf_label') %} {% set
+                  comment = states('sensor.tempo_j1_conf_comment') %} {% set
+                  couleur = states('sensor.tempo_j1_couleur') %}
+
+                  {% set stars_map = {
+                    0: "☆☆☆☆☆",
+                    1: "★☆☆☆☆",
+                    2: "★★☆☆☆",
+                    3: "★★★☆☆",
+                    4: "★★★★☆",
+                    5: "★★★★★"
+                  } %} {% set stars = stars_map[score] if score in stars_map
+                  else "☆☆☆☆☆" %}
+
+                  **Couleur estimée :** {{ couleur|capitalize }} - {{ comment
+                  }}<br>
+
+                  **Fiabilité :** {{ stars }}
+                text_only: true
+              - type: custom:bar-card
+                title: ''
+                max: 100
+                decimal: 1
+                positions:
+                  icon: 'off'
+                  name: inside
+                  value: inside
+                entities:
+                  - entity: sensor.tempo_j1_p_bleu
+                    name: Bleu
+                    color: '#1e90ff'
+                  - entity: sensor.tempo_j1_p_blanc
+                    name: Blanc
+                    color: '#dcdcdc'
+                  - entity: sensor.tempo_j1_p_rouge
+                    name: Rouge
+                    color: '#ff4d4d'
+          - type: vertical-stack
+            cards:
+              - type: horizontal-stack
+                cards:
+                  - type: markdown
+                    content: |2
+                        {% set d = (now().date() + timedelta(days=2)) %}
+                        {% set jours = ["lundi","mardi","mercredi","jeudi","vendredi","samedi","dimanche"] %}
+                        {% set mois = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"] %}
+                        ### Prévision pour le {{ jours[d.weekday()] }} {{ d.day }} {{ mois[d.month-1] }}
+                  - type: custom:button-card
+                    entity: sensor.tempo_niveau_tension_j_2
+                    show_name: false
+                    show_state: false
+                    show_icon: false
+                    styles:
+                      card:
+                        - width: 18px
+                        - height: 18px
+                        - border-radius: 50%
+                        - padding: 0
+                        - margin: 10px 0 0 0
+                        - box-shadow: none
+                    state:
+                      - value: vert
+                        styles:
+                          card:
+                            - background-color: '#00c853'
+                      - value: jaune
+                        styles:
+                          card:
+                            - background-color: '#FFFF00'
+                      - value: orange
+                        styles:
+                          card:
+                            - background-color: '#ffa000'
+                      - value: rouge
+                        styles:
+                          card:
+                            - background-color: '#ff1744'
+                      - value: violet
+                        styles:
+                          card:
+                            - background-color: '#7f00ff'
+              - type: markdown
+                content: >
+                  {% set score = states('sensor.tempo_j2_conf_score')|int(0) %}
+
+                  {% set comment = states('sensor.tempo_j2_conf_comment') %}
+
+                  {% set couleur = states('sensor.tempo_j2_couleur') %}
+
+
+                  {% set stars_map = {
+                    0: "☆☆☆☆☆", 1: "★☆☆☆☆", 2: "★★☆☆☆",
+                    3: "★★★☆☆", 4: "★★★★☆", 5: "★★★★★"
+                  } %}
+
+                  {% set stars = stars_map[score] %}
+
+
+                  **Couleur estimée :** {{ couleur|capitalize }} - {{ comment
+                  }}<br>
+
+                  **Fiabilité :** {{ stars }}
+                text_only: true
+              - type: custom:bar-card
+                max: 100
+                decimal: 1
+                positions:
+                  icon: 'off'
+                  name: inside
+                  value: inside
+                entities:
+                  - entity: sensor.tempo_j2_p_bleu
+                    name: Bleu
+                    color: '#1e90ff'
+                  - entity: sensor.tempo_j2_p_blanc
+                    name: Blanc
+                    color: '#dcdcdc'
+                  - entity: sensor.tempo_j2_p_rouge
+                    name: Rouge
+                    color: '#ff4d4d'
+          - type: vertical-stack
+            cards:
+              - type: horizontal-stack
+                cards:
+                  - type: markdown
+                    content: |2
+                        {% set d = (now().date() + timedelta(days=3)) %}
+                        {% set jours = ["lundi","mardi","mercredi","jeudi","vendredi","samedi","dimanche"] %}
+                        {% set mois = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"] %}
+                        ### Prévision pour le {{ jours[d.weekday()] }} {{ d.day }} {{ mois[d.month-1] }}
+                  - type: custom:button-card
+                    entity: sensor.tempo_niveau_tension_j_3
+                    show_name: false
+                    show_state: false
+                    show_icon: false
+                    styles:
+                      card:
+                        - width: 18px
+                        - height: 18px
+                        - border-radius: 50%
+                        - margin: 10px 0 0 0
+                    state:
+                      - value: vert
+                        styles:
+                          card:
+                            - background-color: '#00c853'
+                      - value: jaune
+                        styles:
+                          card:
+                            - background-color: '#FFFF00'
+                      - value: orange
+                        styles:
+                          card:
+                            - background-color: '#ffa000'
+                      - value: rouge
+                        styles:
+                          card:
+                            - background-color: '#ff1744'
+                      - value: violet
+                        styles:
+                          card:
+                            - background-color: '#7f00ff'
+              - type: markdown
+                content: >
+                  {% set score = states('sensor.tempo_j3_conf_score')|int(0) %}
+
+                  {% set comment = states('sensor.tempo_j3_conf_comment') %}
+
+                  {% set couleur = states('sensor.tempo_j3_couleur') %}
+
+
+                  {% set stars_map = {
+                    0: "☆☆☆☆☆", 1: "★☆☆☆☆", 2: "★★☆☆☆",
+                    3: "★★★☆☆", 4: "★★★★☆", 5: "★★★★★"
+                  } %}
+
+                  {% set stars = stars_map[score] %}
+
+
+                  **Couleur estimée :** {{ couleur|capitalize }} - {{ comment
+                  }}<br>
+
+                  **Fiabilité :** {{ stars }}
+                text_only: true
+              - type: custom:bar-card
+                max: 100
+                decimal: 1
+                positions:
+                  icon: 'off'
+                  name: inside
+                  value: inside
+                entities:
+                  - entity: sensor.tempo_j3_p_bleu
+                    name: Bleu
+                    color: '#1e90ff'
+                  - entity: sensor.tempo_j3_p_blanc
+                    name: Blanc
+                    color: '#dcdcdc'
+                  - entity: sensor.tempo_j3_p_rouge
+                    name: Rouge
+                    color: '#ff4d4d'
+          - type: vertical-stack
+            cards:
+              - type: horizontal-stack
+                cards:
+                  - type: markdown
+                    content: |2
+                        {% set d = (now().date() + timedelta(days=4)) %}
+                        {% set jours = ["lundi","mardi","mercredi","jeudi","vendredi","samedi","dimanche"] %}
+                        {% set mois = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"] %}
+                        ### Prévision pour le {{ jours[d.weekday()] }} {{ d.day }} {{ mois[d.month-1] }}
+                  - type: custom:button-card
+                    entity: sensor.tempo_niveau_tension_j_4
+                    show_name: false
+                    show_state: false
+                    show_icon: false
+                    styles:
+                      card:
+                        - width: 18px
+                        - height: 18px
+                        - border-radius: 50%
+                        - margin: 10px 0 0 0
+                    state:
+                      - value: vert
+                        styles:
+                          card:
+                            - background-color: '#00c853'
+                      - value: jaune
+                        styles:
+                          card:
+                            - background-color: '#FFFF00'
+                      - value: orange
+                        styles:
+                          card:
+                            - background-color: '#ffa000'
+                      - value: rouge
+                        styles:
+                          card:
+                            - background-color: '#ff1744'
+                      - value: violet
+                        styles:
+                          card:
+                            - background-color: '#7f00ff'
+              - type: markdown
+                content: >
+                  {% set score = states('sensor.tempo_j4_conf_score')|int(0) %}
+
+                  {% set comment = states('sensor.tempo_j4_conf_comment') %}
+
+                  {% set couleur = states('sensor.tempo_j4_couleur') %}
+
+
+                  {% set stars_map = {
+                    0: "☆☆☆☆☆", 1: "★☆☆☆☆", 2: "★★☆☆☆",
+                    3: "★★★☆☆", 4: "★★★★☆", 5: "★★★★★"
+                  } %}
+
+                  {% set stars = stars_map[score] %}
+
+
+                  **Couleur estimée :** {{ couleur|capitalize }} - {{ comment }}
+                  <br>
+
+                  **Fiabilité :** {{ stars }}
+                text_only: true
+              - type: custom:bar-card
+                max: 100
+                decimal: 1
+                positions:
+                  icon: 'off'
+                  name: inside
+                  value: inside
+                entities:
+                  - entity: sensor.tempo_j4_p_bleu
+                    name: Bleu
+                    color: '#1e90ff'
+                  - entity: sensor.tempo_j4_p_blanc
+                    name: Blanc
+                    color: '#dcdcdc'
+                  - entity: sensor.tempo_j4_p_rouge
+                    name: Rouge
+                    color: '#ff4d4d'
+          - type: vertical-stack
+            cards:
+              - type: horizontal-stack
+                cards:
+                  - type: markdown
+                    content: |2
+                        {% set d = (now().date() + timedelta(days=5)) %}
+                        {% set jours = ["lundi","mardi","mercredi","jeudi","vendredi","samedi","dimanche"] %}
+                        {% set mois = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"] %}
+                        ### Prévision pour le {{ jours[d.weekday()] }} {{ d.day }} {{ mois[d.month-1] }}
+                  - type: custom:button-card
+                    entity: sensor.tempo_niveau_tension_j_5
+                    show_name: false
+                    show_state: false
+                    show_icon: false
+                    styles:
+                      card:
+                        - width: 18px
+                        - height: 18px
+                        - border-radius: 50%
+                        - margin: 10px 0 0 0
+                    state:
+                      - value: vert
+                        styles:
+                          card:
+                            - background-color: '#00c853'
+                      - value: jaune
+                        styles:
+                          card:
+                            - background-color: '#FFFF00'
+                      - value: orange
+                        styles:
+                          card:
+                            - background-color: '#ffa000'
+                      - value: rouge
+                        styles:
+                          card:
+                            - background-color: '#ff1744'
+                      - value: violet
+                        styles:
+                          card:
+                            - background-color: '#7f00ff'
+              - type: markdown
+                content: >
+                  {% set score = states('sensor.tempo_j5_conf_score')|int(0) %}
+
+                  {% set comment = states('sensor.tempo_j5_conf_comment') %}
+
+                  {% set couleur = states('sensor.tempo_j5_couleur') %}
+
+
+                  {% set stars_map = {
+                    0: "☆☆☆☆☆", 1: "★☆☆☆☆", 2: "★★☆☆☆",
+                    3: "★★★☆☆", 4: "★★★★☆", 5: "★★★★★"
+                  } %}
+
+                  {% set stars = stars_map[score] %}
+
+
+                  **Couleur estimée :** {{ couleur|capitalize }} - {{ comment
+                  }}<br>
+
+                  **Fiabilité :** {{ stars }}
+                text_only: true
+              - type: custom:bar-card
+                max: 100
+                decimal: 1
+                positions:
+                  icon: 'off'
+                  name: inside
+                  value: inside
+                entities:
+                  - entity: sensor.tempo_j5_p_bleu
+                    transform: return x*1.5;
+                    name: Bleu
+                    color: '#1e90ff'
+                  - entity: sensor.tempo_j5_p_blanc
+                    transform: return x*1.5;
+                    name: Blanc
+                    color: '#dcdcdc'
+                  - entity: sensor.tempo_j5_p_rouge
+                    transform: return x*1.5;
+                    name: Rouge
+                    color: '#ff4d4d'
+          - type: vertical-stack
+            cards:
+              - type: horizontal-stack
+                cards:
+                  - type: markdown
+                    content: |2
+                        {% set d = (now().date() + timedelta(days=6)) %}
+                        {% set jours = ["lundi","mardi","mercredi","jeudi","vendredi","samedi","dimanche"] %}
+                        {% set mois = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"] %}
+                        ### Prévision pour le {{ jours[d.weekday()] }} {{ d.day }} {{ mois[d.month-1] }}
+                  - type: custom:button-card
+                    entity: sensor.tempo_niveau_tension_j6_2
+                    show_name: false
+                    show_state: false
+                    show_icon: false
+                    styles:
+                      card:
+                        - width: 18px
+                        - height: 18px
+                        - border-radius: 50%
+                        - margin: 10px 0 0 0
+                    state:
+                      - value: vert
+                        styles:
+                          card:
+                            - background-color: '#00c853'
+                      - value: jaune
+                        styles:
+                          card:
+                            - background-color: '#FFFF00'
+                      - value: orange
+                        styles:
+                          card:
+                            - background-color: '#ffa000'
+                      - value: rouge
+                        styles:
+                          card:
+                            - background-color: '#ff1744'
+                      - value: violet
+                        styles:
+                          card:
+                            - background-color: '#7f00ff'
+              - type: markdown
+                content: >
+                  {% set score = states('sensor.tempo_j6_conf_score')|int(0) %}
+
+                  {% set comment = states('sensor.tempo_j6_conf_comment') %}
+
+                  {% set couleur = states('sensor.tempo_j6_couleur') %}
+
+
+                  {% set stars_map = {
+                    0: "☆☆☆☆☆", 1: "★☆☆☆☆", 2: "★★☆☆☆",
+                    3: "★★★☆☆", 4: "★★★★☆", 5: "★★★★★"
+                  } %}
+
+                  {% set stars = stars_map[score] %}
+
+
+                  **Couleur estimée :** {{ couleur|capitalize }} - {{ comment
+                  }}<br>
+
+                  **Fiabilité :** {{ stars }}
+                text_only: true
+              - type: custom:bar-card
+                max: 100
+                decimal: 1
+                positions:
+                  icon: 'off'
+                  name: inside
+                  value: inside
+                entities:
+                  - entity: sensor.tempo_j6_p_bleu
+                    name: Bleu
+                    color: '#1e90ff'
+                  - entity: sensor.tempo_j6_p_blanc
+                    name: Blanc
+                    color: '#dcdcdc'
+                  - entity: sensor.tempo_j6_p_rouge
+                    name: Rouge
+                    color: '#ff4d4d'
+          - show_name: true
+            show_icon: true
+            type: button
+            icon: mdi:arrow-left-bold-box
+            hold_action:
+              action: none
+            tap_action:
+              action: navigate
+              navigation_path: /dashboard-essai
+          - type: markdown
+            content: >
+              <small> Les données de consommation pour effectuer les estimations
+              sont mises à jour auprès de RTE toutes les 4H.<br> L'estimation
+              calculée est croisée avec l'historique de la saison Tempo, le
+              stock de jours restants, et le calendrier afin de donner un indice
+              de fiabilité avec un commentaire justifiant la valeur
+              d'indice.<br> La pastille de couleur donne un indice de demande
+              prévisionnelle d'électricité. </small>
+            text_only: true
+            grid_options:
+              rows: auto
+              columns: 36
+        column_span: 3
+    background:
+      opacity: 33
+      alignment: center
+      size: auto
+      repeat: repeat
+      attachment: fixed
+    cards: []
+    header:
+      layout: responsive
+      badges_position: bottom
+      badges_wrap: scroll
+      card:
+        type: markdown
+        text_only: true
+        content: '#'
+    max_columns: 3
+    dense_section_placement: true
