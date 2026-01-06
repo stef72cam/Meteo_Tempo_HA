@@ -56,12 +56,15 @@ Ce projet fournit une “météo Tempo” (bleu / blanc / rouge) pour **J+1 à J
 
    **Exemple complet à copier coller et prêt à être utilisé dans votre fichier configuration.yaml** : [`examples/configuration.yaml`](examples/configuration.yaml)
     - Attention: si les sections templates et command_line existent déjà dans votre fichier, il suffit de placer les sensors en dessous de ceux existants, sans faire de doublon de section.
+    - Penser à redémarrer Home Assistant après avoir ajouté le fichier tempo_prevision_simple.py et créé tous les sensors !
+
  
 4) Ajouter une automatisation pour effectuer la mise à jour régulière des valeurs
     - Possibilité de ne pas en faire mais d'ajouter à la place un scan_interval au capteur command_line tempo_prevision_simple
 
     - **Exemple d'automatisation prête à copier/coller et utilisée** [`examples/Maj_previsions`](examples/Maj_previsions) 
        - Effectue les mises à jour aux moments de la journée où RTE publie les données qui nous intéressent avec nouvelle tentative en cas de non réponse de l'API
+         
 6) Ajouter l'affichage dans son tableau de bord Home assistant
 
    Exemple complet : [`examples/Affichage_lovelace`](examples/Affichage_Lovelace)
