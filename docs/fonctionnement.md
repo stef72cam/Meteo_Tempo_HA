@@ -106,38 +106,92 @@ Ce mécanisme garantit une continuité correcte autour du Nouvel An.
   - renormalisation systématique
 - Respect strict des jours restants par couleur
 
+### Saisons, stocks et gestion de l’avance/retard
+
+Le modèle intègre désormais une logique explicite de **calendrier Tempo réel** et de **gestion de stock**.
+
+#### Année Tempo (01/09 → 31/08)
+Le modèle raisonne en **année Tempo**, pas en année civile :
+- Début : **01/09**
+- Fin : **31/08** (inclusive)
+
+Cela permet de compter correctement l’avancement et d’éviter les incohérences autour de septembre/octobre.
+
+#### Saison rouge (01/11 → 31/03 inclusive)
+Les rouges sont strictement limités à la période contractuelle :
+- **01/11 → 31/03** (inclus)
+- jamais de rouge hors saison, même si la tension (Z) est élevée
+
+#### Courbe cible d’utilisation des rouges (alignée sur l’historique)
+Le modèle utilise une “courbe cible” indiquant combien de rouges devraient être consommés à une date donnée,
+pour éviter les rouges trop tôt tout en garantissant **100% des rouges au 31/03**.
+
+Repères utilisés :
+- **10/12 : 5%**
+- **31/01 : 65%**
+- **20/02 : 95%**
+- **31/03 : 100%**
+
+#### Détection avance / retard sur les rouges
+Le modèle compare :
+- rouges déjà utilisés,
+- fraction cible à la date (courbe ci-dessus),
+- nombre de jours encore **éligibles** au rouge (jours ouvrés, non fériés, dans la saison rouge).
+
+Cette comparaison influence directement la probabilité rouge :
+- en avance : rouge calmé (moins de faux positifs)
+- en retard : rouge autorisé plus facilement (pour éviter d’être obligé de “vider en panique”)
+
 ---
 
-## Boost rouge (plein hiver)
-
-Le boost rouge est **volontairement encadré**.
-
-### Conditions :
-- cœur d’hiver (décembre → février)
-- jour ouvré (lundi → vendredi)
-- rouge autorisé (jours restants)
-- `1.05 ≤ Z ≤ 1.6`
-
-### Objectifs :
-- éviter les faux positifs rouge
-- renforcer le rouge uniquement en tension réelle
-- laisser vivre les duels blanc / rouge en zone limite
+### Jours interdits / imposés
+- **Dimanche** : bleu certain
+- **Samedi** :
+  - jamais rouge
+  - plafonnement des extrêmes
+  - renormalisation systématique
+- Respect strict des jours restants par couleur
 
 ---
 
-## Prélèvement sur blanc et bleu
+## Dynamique rouge 
 
-Quand le rouge monte, il prélève une partie des probabilités non rouges.
+Le rouge est encadré par une logique combinant :
+- tension réseau (Z-score),
+- saison rouge (01/11 → 31/03),
+- gestion des stocks (avance/retard via la courbe cible).
 
-- Ancienne valeur maximale : `0.55`
-- Valeur actuelle : `0.45`
+### Plancher rouge dynamique (anti faux positifs)
+Un **plancher rouge dépendant de Z** est utilisé :
+- Z faible → pas de plancher (on évite de “forcer” du rouge)
+- Z tendu → un minimum de présence rouge est garanti
 
-Principes :
-- prélèvement **proportionnel**
-- aucun plancher fixe
-- aucun écrasement arbitraire
+Objectif :
+- calmer les faux positifs rouge quand Z est seulement “moyen”
+- garder une vraie présence rouge quand la tension devient significative
 
-Cela évite les rouges artificiellement dominants.
+### Fenêtre de boost et réglages
+Les boosts ne sont pas brutaux, pour le rouge :
+- utilisation d’une **fenêtre plus courte** pour limiter l’effet “rouge automatique”
+- ajustement des coefficients (plancher + pente) pour un rouge plus cohérent et plus progressif
+
+---
+
+## Ajustement des probabilités non-rouges
+
+Quand la probabilité rouge doit monter, le modèle réalloue depuis blanc/bleu de manière :
+- **proportionnelle**
+- **renormalisée**
+- sans écrasement arbitraire
+
+Le modèle utilise :
+- un **plancher rouge dynamique** (fonction de Z) pour éviter les faux positifs,
+- et des réglages limitant les montées rouge trop agressives.
+- en ce qui concerne d'autres réglages, différents patchs ont étés insérés dans la définition de la couleur pour coller à la réalité observée et ainsi fiabiliser le modèle.
+
+Objectif :
+- éviter un rouge artificiellement dominant,
+- conserver des duels réalistes (blanc/rouge) en zone limite.
 
 ---
 
@@ -193,8 +247,12 @@ Exemples :
 - confiance volontairement abaissée
 
 ---
+### 2. Abscence de données à court terme pour J+2
+RTE publie les données du lendemain dans la nuit. Ainsi les données "J+2" sont manquantes entre 00h30 et 02h00 du matin environs. Il ne s'agit pas d'un bug mais d'une limitation technique liée à la publication des données sur l'API. Les statistiques sont à nouveaux disponibles à la prochaine mise à jour, aux alentours de 3H du matin.
 
-### 2. Zones blanc / rouge ou bleu / blanc ambiguës
+---
+
+### 3. Zones blanc / rouge ou bleu / blanc ambiguës
 Quand :
 - Z autour de la zone de bascule entre deux couleurs
 - stocks encore confortables
@@ -204,7 +262,7 @@ RTE peut arbitrer différemment du modèle qui marquera une incertitude.
 
 ---
 
-### 3. Décisions RTE non modélisables
+### 4. Décisions RTE non modélisables
 Le modèle ne connaît pas :
 - contraintes internes EDF/RTE
 - arbitrages commerciaux
@@ -217,15 +275,12 @@ Ces choix sont **par nature imprévisibles**.
 
 ---
 
-### 4. Aucun apprentissage automatique
+### 5. Aucun apprentissage automatique
 Choix volontaire :
 - modèle déterministe
 - explicable
 - maîtrisable
 - ajustable manuellement
-
-### 5. Abscence de données
-RTE publie les données du lendemain dans la nuit. Ainsi les données "J+2" sont manquantes entre 00h30 et 02h00 du matin environs. Il ne s'agit pas d'un bug mais d'une limitation technique liée à la publication des données sur l'API. Les statistiques sont à nouveaux disponibles à la prochaine mise à jour, aux alentours de 3H du matin.
 
 ---
 
