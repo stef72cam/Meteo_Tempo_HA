@@ -62,12 +62,6 @@ if len(sys.argv) >= 4:
         if arg3 in ("bleu", "blanc", "rouge"):
             REAL_J1 = arg3
 
-# Hypothèses :
-# - day_index(date_str) existe déjà et renvoie l'index du jour Tempo (0..150)
-# - RED_TOTAL = 22, TOTAL_DAYS = 151 (ou ton équivalent)
-
-RED_TOTAL = 22
-TOTAL_DAYS = 151
 
 def base_decision_from_probs(pB: float, pW: float, pR: float) -> str:
     """Décision brute par argmax sur les probas (bleu / blanc / rouge)."""
@@ -279,7 +273,7 @@ def compute_z_rte_like(target_date, c_net_today, daily_data, window_days: int = 
         except Exception:
             continue
 
-        if d > target_date:
+        if d >= target_date:
             break
 
         if (target_date - d).days <= window_days:
@@ -473,6 +467,9 @@ def tempo_year_start(d):
     s = dt.date(d.year, 9, 1)
     return s if d >= s else dt.date(d.year - 1, 9, 1)
 
+def tempo_year_end_inclusive(d: dt.date) -> dt.date:
+    start = tempo_year_start(d)
+    return dt.date(start.year + 1, 8, 31)
 
 def day_index(d):
     return (d - tempo_year_start(d)).days + 1
@@ -483,6 +480,65 @@ def thresholds(j, red_rem, white_rem):
     s_br = 4.00 - 0.015 * j - 0.026 * stock_br
     s_r = 3.15 - 0.010 * j - 0.031 * red_rem
     return s_br, s_r
+
+def red_season_bounds(d: dt.date):
+    """
+    Saison rouge Tempo : 01/11 -> 31/03 (inclusive).
+    IMPORTANT : en janvier/février/mars, le début est 01/11 de l'année précédente.
+    Retourne (start_date, end_date_inclusive)
+    """
+    if d.month >= 11:
+        start = dt.date(d.year, 11, 1)
+        end = dt.date(d.year + 1, 3, 31)
+    else:
+        start = dt.date(d.year - 1, 11, 1)
+        end = dt.date(d.year, 3, 31)
+    return start, end
+
+
+def is_in_red_season(d: dt.date) -> bool:
+    start, end = red_season_bounds(d)
+    return start <= d <= end
+
+
+def red_season_day_index(d: dt.date) -> int:
+    """Index jour dans la saison rouge (0..), 0 = 01/11."""
+    start, _ = red_season_bounds(d)
+    return (d - start).days
+
+
+def red_season_progress(d: dt.date) -> float:
+    """Progression 0..1 dans la saison rouge (inclusive)."""
+    start, end = red_season_bounds(d)
+    if d <= start:
+        return 0.0
+    if d >= end:
+        return 1.0
+    denom = (end - start).days
+    return (d - start).days / denom if denom > 0 else 0.0
+
+def red_floor_from_z(z: float) -> float:
+    """
+    Plancher rouge dynamique en fonction de Z.
+    Objectif : moins de faux positifs rouge quand Z est juste "moyen",
+    mais un plancher qui remonte quand Z devient vraiment tendu.
+    """
+    if z is None:
+        return 0.0
+
+    # Zone basse/moyenne : on évite de forcer du rouge
+    if z < 1:
+        return 0.00
+    if z < 1.10:
+        return 0.08
+    if z < 1.20:
+        return 0.12
+    if z < 1.25:
+        return 0.15
+    # Zone tendue : rouge doit avoir une vraie présence
+    if z < 1.30:
+        return 0.18
+    return 0.22
 
 
 def is_french_public_holiday(d: dt.date) -> bool:
@@ -533,6 +589,58 @@ def allowed(color, d):
     if color == "blanc":
         return wd != 6
     return True
+
+
+def red_target_used_fraction(d: dt.date) -> float:
+    """
+    Fraction cible des rouges qui devraient être utilisés à la date d
+    (courbe non linéaire : début prudent, coeur d'hiver agressif, fin de saison deadline).
+    """
+    # bornes saison rouge
+    start, end = red_season_bounds(d)
+
+    # repères (à ajuster au besoin)
+    # - 10/12 : 5% utilisés
+    # - 31/01 : 65% utilisés
+    # - 20/02 : 95% utilisés
+    # - 31/03 : 100% utilisés
+    y = start.year  # année du 01/11
+    d1 = dt.date(y, 12, 10)
+    d2 = dt.date(y + 1, 1, 31)
+    d3 = dt.date(y + 1, 2, 20)
+    d4 = end  # 31/03
+
+    def lerp(a_date, b_date, a_val, b_val):
+        if d <= a_date:
+            return a_val
+        if d >= b_date:
+            return b_val
+        t = (d - a_date).days / max(1, (b_date - a_date).days)
+        return a_val + t * (b_val - a_val)
+
+    if d <= d1:
+        return lerp(start, d1, 0.00, 0.05)
+    if d <= d2:
+        return lerp(d1, d2, 0.05, 0.65)
+    if d <= d3:
+        return lerp(d2, d3, 0.65, 0.95)
+    return lerp(d3, d4, 0.95, 1.00)
+
+def count_red_eligible_days_left(start_date: dt.date, end_date: dt.date) -> int:
+    """
+    Compte le nombre de jours "éligibles rouge" entre start_date et end_date inclus.
+    Éligible = jour ouvré (lun-ven) non férié, et dans la saison rouge Tempo (via allowed()).
+    """
+    if end_date < start_date:
+        return 0
+
+    n = 0
+    d = start_date
+    while d <= end_date:
+        if allowed("rouge", d):
+            n += 1
+        d += dt.timedelta(days=1)
+    return n
 
 
 def decide_color_with_probs(d, z, j, red_rem, white_rem, blue_rem):
@@ -642,26 +750,64 @@ def decide_color_with_probs(d, z, j, red_rem, white_rem, blue_rem):
         else:
             edf_red_factor *= 0.4
 
-    # Ajustement en fonction du stock "attendu" de rouges
-    year = d.year
-    red_start = dt.date(year, 11, 1)
-    red_end = dt.date(year + 1, 3, 31)
+ 
+    
+    # Ajustement en fonction du stock "attendu" de rouges (courbe cible non linéaire)
+    target_used_frac = red_target_used_fraction(d)
+    expected_red_used = RED_TOTAL * target_used_frac
+    expected_red_remaining = max(0.0, RED_TOTAL - expected_red_used)
 
-    if d <= red_start:
-        red_progress = 0.0
-    elif d >= red_end:
-        red_progress = 1.0
+    #  pression réelle vs pression cible sur les jours éligibles restants ---
+    _, red_end = red_season_bounds(d)
+
+    # Jours "posables" restants (lun-ven hors fériés, dans la saison rouge)
+    eligible_left = count_red_eligible_days_left(d, red_end)
+    eligible_left = max(1, eligible_left)  # sécurité
+
+    # Pression réelle = combien de rouges il faut poser par jour éligible restant
+    pressure_real = red_rem / eligible_left
+
+    # Pression cible = combien de rouges il "devrait" rester (selon courbe) par jour éligible restant
+    pressure_target = expected_red_remaining / eligible_left
+
+    # Delta pression : >0 => on est en retard (trop de rouges pour trop peu de jours)
+    delta_pressure = pressure_real - pressure_target
+
+    # Cas extrême : plus de rouges que de jours éligibles => deadline immédiate
+    if red_rem > eligible_left:
+        delta_pressure = max(delta_pressure, 0.20)  # force un "retard" clair
+
+
+    # Périodes
+    debut_saison = (d.month == 11) or (d.month == 12 and d.day < 10)
+    coeur_hiver_local = ((d.month == 12 and d.day >= 10) or (d.month in (1, 2) and d.day <= 15))
+    fin_saison_local = (d.month == 2 and d.day >= 20) or (d.month == 3)
+
+    # delta_pressure > 0  => retard (il faut "poser" plus souvent)
+    # delta_pressure < 0  => avance (on a déjà trop consommé)
+    if debut_saison:
+        if delta_pressure > 0.03:
+            edf_red_factor *= 0.70   # on calme en début de saison même si retard léger
+        elif delta_pressure < -0.03:
+            edf_red_factor *= 0.85
+
+    elif coeur_hiver_local:
+        if delta_pressure > 0.03:
+            edf_red_factor *= 1.20
+        elif delta_pressure < -0.03:
+            edf_red_factor *= 0.80
+
+    elif fin_saison_local:
+        if delta_pressure > 0.02:
+            edf_red_factor *= 1.35   # fin de saison = deadline, donc boost plus net
+        elif delta_pressure < -0.03:
+            edf_red_factor *= 0.85
+
     else:
-        red_progress = (d - red_start).days / (red_end - red_start).days
-
-    expected_red_used = RED_TOTAL * red_progress
-    expected_red_remaining = RED_TOTAL - expected_red_used
-    delta_red = red_rem - expected_red_remaining
-
-    if delta_red > 4:
-        edf_red_factor *= 1.15
-    elif delta_red < -4:
-        edf_red_factor *= 0.7
+        if delta_pressure > 0.04:
+            edf_red_factor *= 1.08
+        elif delta_pressure < -0.04:
+            edf_red_factor *= 0.92
 
     if red_rem < 4 and d.month not in (1, 2):
         edf_red_factor *= 0.5
@@ -675,8 +821,8 @@ def decide_color_with_probs(d, z, j, red_rem, white_rem, blue_rem):
     # Petit biais sur le score bleu en fonction du stock de jours bleus restants
     # Année Tempo = 01/09 -> 31/08
     tempo_start = tempo_year_start(d)
-    tempo_end = tempo_start.replace(year=tempo_start.year + 1)
-    total_days_tempo = (tempo_end - tempo_start).days
+    tempo_end = tempo_year_end_inclusive(d)
+    total_days_tempo = (tempo_end - tempo_start).days + 1
 
     if total_days_tempo > 0:
         progress = (d - tempo_start).days / total_days_tempo
@@ -707,15 +853,19 @@ def decide_color_with_probs(d, z, j, red_rem, white_rem, blue_rem):
             delta = min(0.08, delta_base * 0.05)
             score_w = max(score_w, score_b + delta)
 
-        # 2) Rouge un peu renforcé quand Z dépasse s_r_adj - 0.2
-        if (
-            allowed_red
-            and z >= s_r_adj - 0.2
-            and score_r < score_w
-        ):
-            delta_base = max(0.0, z - (s_r_adj - 0.2))
-            delta = min(0.10, delta_base * 0.06)
-            score_r = max(score_r, score_w + delta)
+        # 2) Rouge : réveil progressif seulement très près du seuil rouge
+        if allowed_red:
+            # zone d'approche finale du seuil rouge : [s_r_adj - 0.07 ; s_r_adj]
+            start = s_r_adj - 0.07
+            if start <= z < s_r_adj and score_r < score_w:
+                # t: 0 -> 1 quand on approche s_r_adj
+                t = (z - start) / max(1e-6, (s_r_adj - start))
+                # rouge remonte un peu, mais ne dépasse pas le blanc en zone médiane
+                score_r = max(
+                    score_r,
+                    score_w * (0.40 + 0.40 * t)  # 0.35 -> 0.65 du blanc
+                )
+
 
     # Passage en probabilités brutes
     total = score_b + score_w + score_r
@@ -732,7 +882,7 @@ def decide_color_with_probs(d, z, j, red_rem, white_rem, blue_rem):
     # en fonction des jours restants dans l'année Tempo.
     # ------------------------------------------------------------------
     tempo_start = tempo_year_start(d)
-    tempo_end = dt.date(tempo_start.year + 1, 8, 31)
+    tempo_end = tempo_year_end_inclusive(d)
     total_days_tempo = (tempo_end - tempo_start).days + 1
     days_left = max(1, total_days_tempo - j + 1)
 
@@ -797,40 +947,42 @@ def decide_color_with_probs(d, z, j, red_rem, white_rem, blue_rem):
 
     # PATCH fin de saison (mi-février → mars)
     if z is not None and ((d.month == 2 and d.day >= 15) or d.month == 3):
-        year_fs = d.year
+        year_fs = red_season_bounds(d)[0].year  # année de début de saison rouge (01/11)
 
-        red_start_fs = dt.date(year_fs, 11, 1)
-        red_end_fs = dt.date(year_fs + 1, 3, 31)
+        red_start_fs, red_end_fs = red_season_bounds(d)
+
         if d <= red_start_fs:
             red_progress_fs = 0.0
         elif d >= red_end_fs:
             red_progress_fs = 1.0
         else:
             red_progress_fs = (d - red_start_fs).days / (red_end_fs - red_start_fs).days
+
         expected_red_used_fs = RED_TOTAL * red_progress_fs
         expected_red_remaining_fs = RED_TOTAL - expected_red_used_fs
 
         white_start_fs = dt.date(year_fs, 11, 1)
         white_end_fs = dt.date(year_fs + 1, 4, 30)
+
         if d <= white_start_fs:
             white_progress_fs = 0.0
         elif d >= white_end_fs:
             white_progress_fs = 1.0
         else:
             white_progress_fs = (d - white_start_fs).days / (white_end_fs - white_start_fs).days
+
         expected_white_used_fs = WHITE_TOTAL * white_progress_fs
         expected_white_remaining_fs = WHITE_TOTAL - expected_white_used_fs
 
         boosted_fs = False
 
-        if white_rem > expected_white_remaining_fs + 3 and p_blanc is not None:
+        if white_rem > expected_white_remaining_fs + 3:
             p_blanc = max(p_blanc, 0.25)
             boosted_fs = True
 
         if (
             red_rem > expected_red_remaining_fs + 2
             and red_rem > 5
-            and p_rouge is not None
             and allowed_red
             and wd < 5
         ):
@@ -843,6 +995,7 @@ def decide_color_with_probs(d, z, j, red_rem, white_rem, blue_rem):
                 p_bleu /= s_fs
                 p_blanc /= s_fs
                 p_rouge /= s_fs
+
 
     # PATCH bonus fin de saison (10 → 31 mars)
     if d.month == 3 and d.day >= 10:
@@ -894,17 +1047,17 @@ def decide_color_with_probs(d, z, j, red_rem, white_rem, blue_rem):
         non_red = p_bleu + p_blanc
 
         # 1) On calcule combien on peut transférer vers le rouge
-        if z >= 1.20:
-            max_shift = 0.40
+        if z >= 1.30:
+            max_shift = 0.30
         elif z >= 1.00:
-            max_shift = 0.28
+            max_shift = 0.10
         elif z >= 0.70:
-            max_shift = 0.20
-        else:
             max_shift = 0.05
+        else:
+            max_shift = 0.03
 
         if max_shift > 0.0 and non_red > 0.0:
-            shift = min(max_shift, non_red * 0.6)
+            shift = min(max_shift, non_red * 0.5)
 
             # On prélève sur bleu+blanc proportionnellement
             p_bleu  -= shift * (p_bleu  / non_red)
@@ -919,7 +1072,7 @@ def decide_color_with_probs(d, z, j, red_rem, white_rem, blue_rem):
 
         # 2) Pour Z >= 1.2 : rouge ne doit plus être derrière bleu
         if z >= 1.20 and p_rouge < p_bleu:
-            diff = (p_bleu - p_rouge) * 0.7
+            diff = (p_bleu - p_rouge) * 0.6
             p_bleu  -= diff
             p_rouge += diff
 
@@ -929,11 +1082,13 @@ def decide_color_with_probs(d, z, j, red_rem, white_rem, blue_rem):
                 p_blanc /= s_z2
                 p_rouge /= s_z2
 
-        # 3) Pour 0.80 <= Z < 1.20 : plancher rouge
-        if 0.80 <= z < 1.20 and p_rouge < 0.16:
+        # 3) Plancher rouge dynamique selon Z (au lieu d'un plancher fixe)
+        floor_r = red_floor_from_z(z)
+
+        if floor_r > 0.0 and p_rouge < floor_r:
             non_red = p_bleu + p_blanc
             if non_red > 0:
-                add = min(0.12 - p_rouge, non_red * 0.4)
+                add = min(floor_r - p_rouge, non_red * 0.4)
                 if add > 0:
                     p_bleu  -= add * (p_bleu  / non_red)
                     p_blanc -= add * (p_blanc / non_red)
@@ -945,11 +1100,12 @@ def decide_color_with_probs(d, z, j, red_rem, white_rem, blue_rem):
                 p_blanc /= s_z3
                 p_rouge /= s_z3
 
-    # BOOST ROUGE plein hiver dans la zone Z ≈ 1.05 –1.9
+
+    # BOOST ROUGE plein hiver dans la zone Z ≈ 1.25 –1.9
     if (
         z is not None
         and coeur_hiver
-        and 1.05 <= z <= 1.9
+        and 1.25 <= z <= 1.9
         and allowed_red
         and wd < 5
     ):
@@ -1078,7 +1234,7 @@ def decide_color_with_probs(d, z, j, red_rem, white_rem, blue_rem):
         and z >= 1.10
     ):
         # On impose un plancher = max(p_blanc, p_rouge)
-        target = max(p_blanc, p_rouge)
+        target = max(p_rouge, min(p_blanc, red_floor_from_z(z)))
         if p_rouge < target:
             diff = target - p_rouge
             # on prélève moitié sur bleu, moitié sur blanc
@@ -1162,155 +1318,43 @@ def decide_color_with_probs(d, z, j, red_rem, white_rem, blue_rem):
     return couleur, red_rem, white_rem, blue_rem, p_bleu, p_blanc, p_rouge
 
 
-
 def decide_color_with_wrappers(d, z, j, red_rem, white_rem, blue_rem):
-    # Appel du modèle standard
-    couleur0, red_rem, white_rem, blue_rem, pB, pW, pR = decide_color_with_probs(
-        d, z, j, red_rem, white_rem, blue_rem
-    )
+    """
+    Wrapper autour de decide_color_with_probs:
+    - force bleu le dimanche
+    - interdit rouge si non autorisé (samedi / férié / hors saison / etc.)
+    - recalcule les stocks proprement à partir des stocks d'entrée
+    """
+    # On récupère la couleur + les probas (on ignore les stocks retournés par la fonction interne)
+    couleur, _, _, _, pB, pW, pR = decide_color_with_probs(d, z, j, red_rem, white_rem, blue_rem)
 
-    wd = d.weekday()
-    debut_hiver = (d.month == 11) or (d.month == 12 and d.day < 10)
-    coeur_hiver = (
-        (d.month == 12 and d.day >= 10) or 
-        (d.month == 1) or 
-        (d.month == 2 and d.day <= 15)
-    )
-    fin_saison = (d.month == 2 and d.day >= 20) or (d.month == 3)
+    # Dimanche → bleu forcé
+    if d.weekday() == 6:
+        couleur = "bleu"
+        pB, pW, pR = 1.0, 0.0, 0.0
 
-    # --- Seuils (nécessaires au duel bleu/blanc par Z) ---
-    s_br, s_r = thresholds(j, red_rem, white_rem)
-    s_br_adj = s_br - Z_WHITE_EXPANSION
-    s_r_adj = s_r
-
-    # ------------------------------------------------------------------
-    # OVERRIDE immédiat : dimanche / férié = bleu certain
-    # ------------------------------------------------------------------
-    if wd == 6:
-        return "bleu", red_rem, white_rem, blue_rem, 1.0, 0.0, 0.0
-
-    # ------------------------------------------------------------------
-    # Si rouge interdit (samedi ou férié) → duel bleu/blanc uniquement
-    # ------------------------------------------------------------------
-    if wd == 5 or is_french_public_holiday(d):
-        # 1) supprimer rouge
+    # Si le modèle sort "rouge" mais que rouge est interdit ce jour-là → on retire rouge
+    if couleur == "rouge" and not allowed("rouge", d):
         pR = 0.0
-
-        # 2) renormaliser bleu/blanc
         s = pB + pW
-        if s > 0:
+        if s <= 0:
+            pB, pW = 0.8, 0.2
+            s = 1.0
+        else:
             pB /= s
             pW /= s
-        else:
-            pB, pW = 0.5, 0.5
-
-        # 3) Correction lisse par Z (proportionnelle, sans plafonds)
-        # Objectif : plus Z est haut (au-dessus du seuil bleu/blanc), plus BLANC prend l'ascendant.
-        if z is not None:
-            # On démarre la bascule un peu au-dessus de la frontière bleu/blanc,
-            # pour éviter d'inverser dès le premier frôlement.
-            margin = 0.10
-            pivot = s_br_adj + margin
-
-            # pente : plus petit = bascule plus brutale, plus grand = plus progressive
-            scale = 0.18
-
-            # sigmoïde 0..1
-            t = 1.0 / (1.0 + math.exp(-(z - pivot) / scale))
-
-            # Transfert proportionnel basé sur l'avance du bleu.
-            # - Si bleu domine et Z est haut → blanc récupère une grande partie de l'avance.
-            # - Si blanc domine déjà → on ne touche pas (pas besoin).
-            if pB > pW:
-                shift = (pB - pW) * t
-                pB -= shift
-                pW += shift
-
-            # renormalisation de sécurité
-            s2 = pB + pW
-            if s2 > 0:
-                pB /= s2
-                pW /= s2
-
-        # Choix final bleu/blanc
         couleur = "bleu" if pB >= pW else "blanc"
 
-        # IMPORTANT : on ne retouche PAS les stocks ici
-        # (ils sont déjà ajustés dans decide_color_with_probs)
-        return couleur, red_rem, white_rem, blue_rem, pB, pW, pR
-        
-        
-    # ------------------------------------------------------------------
-    # RÈGLE 1 — Début d'hiver : Z > 1.4 mais rouge anormalement bas
-    # ------------------------------------------------------------------
-    if debut_hiver and z is not None and z >= 1.4 and pR < 0.15:
-        add = 0.10
-        total_non_r = pB + pW
-        if total_non_r > 0:
-            pB -= add * (pB / total_non_r)
-            pW -= add * (pW / total_non_r)
-            pR += add
-
-    # ------------------------------------------------------------------
-    # RÈGLE 2A — Cœur d’hiver : Z ~ 0.7–1.0 → renforcement du BLANC
-    # ------------------------------------------------------------------
-    if coeur_hiver and z is not None and 0.70 <= z < 1.00 and pW < pB:
-        shift = min(0.07, pB - pW)
-        pB -= shift
-        pW += shift
-
-    # ------------------------------------------------------------------
-    # RÈGLE 2B — Cœur d’hiver : Z ~ 0.9–1.3 → léger renforcement ROUGE
-    # ------------------------------------------------------------------
-    if coeur_hiver and z is not None and 0.90 <= z <= 1.30 and pR < 0.33:
-        shift = 0.05
-        total_nb = pB + pW
-        if total_nb > 0:
-            pB -= shift * (pB / total_nb)
-            pW -= shift * (pW / total_nb)
-            pR += shift
-
-    # ------------------------------------------------------------------
-    # RÈGLE 3 — Fin de saison (mars) : Bleu légèrement gagnant alors que Z > 1
-    # ------------------------------------------------------------------
-    if fin_saison and z is not None and z > 1.0 and pB > pW and pB > pR:
-        shift = min(0.08, pB - max(pW, pR))
-        if pW > pR:
-            pB -= shift
-            pW += shift
-        else:
-            pB -= shift
-            pR += shift
-
-    # ------------------------------------------------------------------
-    # Recalcul gagnant après ajustement des probas
-    # ------------------------------------------------------------------
-    if pB >= pW and pB >= pR:
-        couleur = "bleu"
-    elif pW >= pB and pW >= pR:
-        couleur = "blanc"
+    # Mise à jour des stocks à partir des stocks d'entrée (propre, sans double-décrément)
+    red2, white2, blue2 = red_rem, white_rem, blue_rem
+    if couleur == "rouge":
+        red2 = max(0, red2 - 1)
+    elif couleur == "blanc":
+        white2 = max(0, white2 - 1)
     else:
-        couleur = "rouge"
+        blue2 = max(0, blue2 - 1)
 
-    # ------------------------------------------------------------------
-    # Correction des stocks si la couleur finale diffère de la couleur brute
-    # ------------------------------------------------------------------
-    if couleur != couleur0:
-        if couleur0 == "rouge":
-            red_rem += 1
-        elif couleur0 == "blanc":
-            white_rem += 1
-        else:
-            blue_rem += 1
-
-        if couleur == "rouge":
-            red_rem = max(0, red_rem - 1)
-        elif couleur == "blanc":
-            white_rem = max(0, white_rem - 1)
-        else:
-            blue_rem = max(0, blue_rem - 1)
-
-    return couleur, red_rem, white_rem, blue_rem, pB, pW, pR
+    return couleur, red2, white2, blue2, pB, pW, pR
 
 
  
@@ -1429,9 +1473,7 @@ def _compute_confidence_score(couleur, p_bleu, p_blanc, p_rouge, red_rem, white_
 
     # 5) Effet "stock restant" rouge / blanc
 
-    year = d.year
-    red_start = dt.date(year, 11, 1)
-    red_end = dt.date(year + 1, 3, 31)
+    red_start, red_end = red_season_bounds(d)
 
     if d <= red_start:
         red_progress = 0.0
@@ -1448,7 +1490,7 @@ def _compute_confidence_score(couleur, p_bleu, p_blanc, p_rouge, red_rem, white_
         raw -= 0.4
     elif delta_red < -4 and couleur == "rouge":
         raw -= 0.4
-
+    year = red_season_bounds(d)[0].year  # IX : année de saison (01/11)
     white_start = dt.date(year, 11, 1)
     white_end = dt.date(year + 1, 4, 30)
 
