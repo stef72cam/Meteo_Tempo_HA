@@ -1,6 +1,8 @@
 ----
 
-## V1.1.0
+## [`V1.0.1`](https://github.com/stef72cam/Meteo_Tempo_HA/releases/tag/v1.01)
+
+
 
 Update corrective : 
 - Simplification de la fonction wrappers.
