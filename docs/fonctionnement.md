@@ -213,6 +213,8 @@ Le modèle ne connaît pas :
 Ces choix sont **par nature imprévisibles**.
 **Il est donc impossible de prédire une journée rouge si RTE vide les stocks** (obligatoire contractuellement entre le 01/11 et le 31/03) **mais que la tension du réseau est faible** (exemple en mars 2024 où la tension sur le réseau était faible et donc normalement bleue, mais pour vider les stocks, cette journée fut rouge). La probabilité existera, mais elle ne sera pas en tête, sans que cela ne soit un dysfonctionnement.
 
+**Ceci est valable également pour une journée blanche**. Toujours pour une question de gestion des stocks, il est possible que d’après les indicateurs de tension du réseau, tout signale rouge mais que L’algorithme de RTE en décide autrement. Malheureusement dans la documentation disponible sur le net, rien n’est précisé sur comment sont gérés ces stocks. Uniquement sur des seuils de déclenchement rouge/blanc, et dans ce cas, l'erreur est quasi-inévitable.
+
 ---
 
 ### 4. Aucun apprentissage automatique
