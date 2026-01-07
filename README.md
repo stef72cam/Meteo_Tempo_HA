@@ -2,7 +2,8 @@
 
 Ce projet fournit une “météo Tempo” (bleu / blanc / rouge) pour **J+1 à J+6**, exploitable dans **Home Assistant**, en s’appuyant sur les **API officielles RTE** (prévisions de consommation / production et prévisions annuelles).
 
-> ⚠️ Ce n’est pas la vérité officielle EDF : c’est une **prévision**, avec des erreurs possibles, comme pour la météo.  
+> ⚠️ Ce n’est pas la vérité officielle EDF : c’est une **prévision**, avec des erreurs possibles, comme pour la météo.
+> Les prévisions peuvent changer en cours de journée, celles-ci sont mises à jour en permanence ! 
 > La couleur **officielle** n’est connue que lorsque RTE la publie.
 > 
 > Ce projet est purement personnel et est partagé à titre d'exemple pour ceux qui veulent simplement l'essayer, le personnaliser ou le modifier à leur guise. 
