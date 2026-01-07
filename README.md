@@ -12,7 +12,8 @@ Ce projet fournit une “météo Tempo” (bleu / blanc / rouge) pour **J+1 à J
 
 ---
 
-<img width="1794" height="889" alt="image" src="https://github.com/user-attachments/assets/2e16d2ac-2dd7-4666-b32c-95f94cc006bf" />
+<img width="1797" height="872" alt="image" src="https://github.com/user-attachments/assets/3c0b8a7a-c6ec-4f31-8abe-d85d7b465884" />
+
 
 
 ## Fonctionnalités
