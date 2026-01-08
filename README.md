@@ -2,12 +2,17 @@
 
 Ce projet fournit une “météo Tempo” (bleu / blanc / rouge) pour **J+1 à J+6**, exploitable dans **Home Assistant**, en s’appuyant sur les **API officielles RTE** (prévisions de consommation / production et prévisions annuelles).
 
-> ⚠️ Ce n’est pas la vérité officielle EDF : c’est une **prévision**, avec des erreurs possibles, comme pour la météo.
-> Les prévisions peuvent changer en cours de journée, celles-ci sont mises à jour en permanence ! 
-> La couleur **officielle** n’est connue que lorsque RTE la publie.
-> 
+ ⚠️ Il s’agit d’une estimation probabiliste, pas d’une certitude. Comme pour la météo, le modèle évalue des risques (probabilités),
+      et non une vérité absolue. Ce projet ne fournit donc **pas une prédiction certaine** des jours Tempo (bleu / blanc / rouge).
+  -  Ce n’est pas la vérité officielle EDF/RTE : c’est une **prévision**, avec des erreurs possibles basée sur des indicateurs publics (RTE) et des règles inspirées de l’historique EDF.
+  -  La couleur **officielle** n’est connue que lorsque RTE la publie, la veille pour le lendemain.
+
+> L'objectif est d'aider les potentiels utilisateurs de ce modèle à anticiper les postes de consommation pour les journées où les tarifs sont les plus élevés.
+
+> Les prévisions peuvent changer en cours de journée, celles-ci sont **mises à jour en permanence !**
+
 > Ce projet est purement personnel et est partagé à titre d'exemple pour ceux qui veulent simplement l'essayer, le personnaliser ou le modifier à leur guise. 
-> Il n'a pas vocation à être maintenu ou déployé à grande échelle.
+> Il n'a pour le moment aucune vocation à être maintenu ou déployé à grande échelle.
 
 
 ---
@@ -119,15 +124,20 @@ Chaque `J+N` contient notamment :
 - Le modèle ne remplace pas les annonces officielles Tempo.
 - Les prévisions reposent sur des données externes (RTE) qui peuvent évoluer.
 - Les résultats sont fournis “as-is”, sans garantie.
-- Passionné par la domotique, mais n'ayant aucune connaissance en codage, la majeure partie de ce script a été réalisé à l'aide de l'IA.
-- La logique et le fonctionnement voulu sont les miens, la rédaction du code absolument pas. Les spécialistes pourront y voir des abbérations et je m'en excuse d'avance.
-- Pour rappel, c'est un projet purement personnel que je partage pour que je ne sois pas le seul à profiter.
+- Le code peut- être mis à jour pour fiabiliser les probabilités obtenues par le modèle
+   - Ces fiabilisations reposent sur un ajustement du code pour affiner les réponses et limiter les grosses erreurs.
+   - Ces ajustements s'effectuent à l'aide de backtess et des observations entre les prévisions du modèle et le choix réel de RTE.
+      - Principe du Brier Score
+- Le projet est personnel et développé par passion pour la domotique.
+- La logique fonctionnelle et les choix de modélisation sont les miens.
+- La création du code a été assisté par des outils d’IA, ce qui peut entraîner des choix non optimaux d’un point de vue purement informatique.
+- Ce projet est partagé librement afin que d’autres puissent en bénéficier, sans prétention à l’exhaustivité ni à l’infaillibilité.
 
 ---
 
 ## Sources
 
-Pour mener ce projet au stade fonctionnel avec la fiabilité tel qu'elle est aujourd'hui (≈92%), j'ai réalisé différents backtests sur les 10 années précédentes.
+Pour mener ce projet au stade fonctionnel tel qu'il est aujourd'hui, j'ai réalisé différents backtests sur les 10 années précédentes.
 Les sources sur lesquelles je me suis basé pour faire mes tests et faire fonctionner ce modèle sont : 
 
  - https://www.rte-france.com/donnees-publications/eco2mix-donnees-temps-reel/synthese-donnees
@@ -135,3 +145,4 @@ Les sources sur lesquelles je me suis basé pour faire mes tests et faire foncti
  - https://www.services-rte.com/files/live/sites/services-rte/files/pdf/20160106_Methode_de_choix_des_jours_Tempo.pdf
  - https://data.rte-france.com/catalog/-/api/doc/user-guide/Generation+Forecast/3.0
  - https://data.rte-france.com/catalog/-/api/doc/user-guide/Consumption/1.2
+ -  L'observation réelle du modèle VS journée seléctionnée par RTE
