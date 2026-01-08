@@ -386,13 +386,13 @@ template:
           {% else %}
             {% set z = j.z | float(0) %}
 
-            {% if z < 0.3 %}
+            {% if z < 0.6 %}
               vert
-            {% elif z < 0.5 %}
+            {% elif z < 1.0 %}
               jaune
-            {% elif z < 0.8 %}
+            {% elif z < 1.3 %}
               orange
-            {% elif z < 1.2 %}
+            {% elif z < 1.8 %}
               rouge
             {% else %}
               violet
@@ -410,13 +410,13 @@ template:
           {% else %}
             {% set z = j.z | float(0) %}
 
-            {% if z < 0.3 %}
+            {% if z < 0.6 %}
               vert
-            {% elif z < 0.5 %}
+            {% elif z < 1.0 %}
               jaune
-            {% elif z < 0.8 %}
+            {% elif z < 1.3 %}
               orange
-            {% elif z < 1.2 %}
+            {% elif z < 1.8 %}
               rouge
             {% else %}
               violet
@@ -434,13 +434,13 @@ template:
           {% else %}
             {% set z = j.z | float(0) %}
 
-            {% if z < 0.3 %}
+            {% if z < 0.6 %}
               vert
-            {% elif z < 0.5 %}
+            {% elif z < 1.0 %}
               jaune
-            {% elif z < 0.8 %}
+            {% elif z < 1.3 %}
               orange
-            {% elif z < 1.2 %}
+            {% elif z < 1.8 %}
               rouge
             {% else %}
               violet
@@ -458,13 +458,13 @@ template:
           {% else %}
             {% set z = j.z | float(0) %}
 
-            {% if z < 0.3 %}
+            {% if z < 0.6 %}
               vert
-            {% elif z < 0.5 %}
+            {% elif z < 1.0 %}
               jaune
-            {% elif z < 0.8 %}
+            {% elif z < 1.3 %}
               orange
-            {% elif z < 1.2 %}
+            {% elif z < 1.8 %}
               rouge
             {% else %}
               violet
@@ -482,13 +482,13 @@ template:
           {% else %}
             {% set z = j.z | float(0) %}
 
-            {% if z < 0.3 %}
+            {% if z < 0.6 %}
               vert
-            {% elif z < 0.5 %}
+            {% elif z < 1.0 %}
               jaune
-            {% elif z < 0.8 %}
+            {% elif z < 1.3 %}
               orange
-            {% elif z < 1.2 %}
+            {% elif z < 1.8 %}
               rouge
             {% else %}
               violet
@@ -506,18 +506,19 @@ template:
           {% else %}
             {% set z = j.z | float(0) %}
 
-            {% if z < 0.3 %}
+            {% if z < 0.6 %}
               vert
-            {% elif z < 0.5 %}
+            {% elif z < 1.0 %}
               jaune
-            {% elif z < 0.8 %}
+            {% elif z < 1.3 %}
               orange
-            {% elif z < 1.2 %}
+            {% elif z < 1.8 %}
               rouge
             {% else %}
               violet
             {% endif %}
           {% endif %}
+
 
 
           
