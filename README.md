@@ -146,3 +146,24 @@ Les sources sur lesquelles je me suis basé pour faire mes tests et faire foncti
  - https://data.rte-france.com/catalog/-/api/doc/user-guide/Generation+Forecast/3.0
  - https://data.rte-france.com/catalog/-/api/doc/user-guide/Consumption/1.2
  -  L'observation réelle du modèle VS journée seléctionnée par RTE
+---
+
+## Evolutions possibles
+
+- Le code étant entièrement en python avec un retour en json, il est parfaitement possible pour les plus expérimentés d'utiliser le modèle dans d'autres systèmes qui n'ont rien à voir avec Home Assistant.
+- Des améliorations sont apportées progressivement au modèle et testées avant d'être publiées pour tenter d'améliorer les prévisions du modèle, dans une logique de stabilité avant tout.
+    - Le coeur du modèle (logique de calcul des probabilités et structure JSON) est volontairement maintenue stable. Les évolutions portent principalement sur l'affinage de paramètres de calcul internes.
+- Si j'estime que tout est assez robuste sur du long terme en "production", avec assez d'utilisateurs et de retours, et pas seulement en backtest, un déploiement plus gobal est envisageable.
+    - Je pense notamment à tenter un dépot via HACS pour une installation simplifiée.
+---
+
+## Vous souhaitez soutenir le projet ?
+
+- Parlez-en autour de vous !
+- N'hésitez surtout pas à faire des tests de votre côté, bidouiller, améliorer le code et/ou le modèle !
+-  **Et surtout** n'hésitez pas à me faire part de vos retours ! Toute remarque **constructive** est bonne à prendre.
+-  Un simple **merci** vaut toutes les heures passées, présentes et futures à faire évoluer ce projet.
+  
+> -  Certains d'entre vous ont souhaité me remercier avec un petit pourboire, si vous le souhaitez : 
+[`Offrir un café`](https://paypal.me/Stef72cam)
+ 
