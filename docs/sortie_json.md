@@ -131,6 +131,63 @@ Plus `z` est élevé → réseau sous tension → probabilité blanc / rouge plu
 
 ---
 
+## Ajustement météorologique (v1.2+)
+
+À partir de la version **1.2**, le modèle peut appliquer un **biais météorologique optionnel**
+aux probabilités, basé sur l’écart entre la **température nationale journalière**
+et les **normales saisonnières**.
+
+---
+
+### Champs météo possibles dans chaque bloc `J+n`
+
+Ces champs peuvent être présents **uniquement si l’option météo est activée**.
+Dans le cas inverse le json retourne : `meteo_disabled_manual`
+
+---
+
+### `T_nat`
+- **Type** : `number` | `null`
+- **Unité** : °C
+- **Signification** : température moyenne nationale journalière estimée.
+- **Source** : Open-Meteo (utilisation non commerciale).
+
+---
+
+### `T_norm`
+- **Type** : `number` | `null`
+- **Unité** : °C
+- **Signification** : normale saisonnière associée au jour calendaire.
+
+---
+
+### `delta_T`
+- **Type** : `number` | `null`
+- **Signification** : écart thermique journalier.
+- **Calcul** :
+  - `delta_T = T_nat - T_norm`
+
+---
+
+### `meteo_bias`
+- **Type** : `number`
+- **Signification** : intensité totale du biais météorologique appliqué aux probabilités.
+- **Remarques** :
+  - valeur toujours faible et bornée
+  - `0` signifie qu’aucun biais météo n’a été appliqué
+  - ne peut jamais inverser une situation de tension forte
+
+---
+
+### `meteo_error`
+- **Type** : `string` | `null`
+- **Signification** : état de la récupération des données météo.
+- **Remarques** :
+  - en cas d’erreur météo, ou de désactivation mannuelle le modèle continue **sans biais météo**
+  - aucune dégradation artificielle n’est appliquée
+    
+---
+
 ##  Système de confiance
 
 ### `confidence_score`
@@ -163,6 +220,28 @@ Plus `z` est élevé → réseau sous tension → probabilité blanc / rouge plu
 ---
 
 ##  Bloc de debug du calcul Z
+---
+
+### Activation du debug (v1.2+)
+
+Le bloc `z_debug` est **optionnel** et peut être :
+- activé pour diagnostic
+- désactivé pour un usage standard (JSON plus léger)
+
+Lorsque le debug est désactivé :
+- aucun champ `z_debug` n’est présent
+- le modèle et les résultats restent strictement identiques
+
+---
+
+### Objectifs du debug
+
+Le bloc de debug permet :
+- de comprendre **comment le Z-score a été calibré**
+- de diagnostiquer les cas limites et les erreurs (année civile, données manquantes, fallback, API météo HS, etc.)
+- de garantir une **traçabilité complète** du calcul
+
+Il n’est **jamais utilisé** dans la prise de décision finale.
 
 ### `z_debug`
 Expose comment l’indice Z a été calculé.
@@ -229,4 +308,7 @@ Champs :
 - La fiabilité augmente à mesure que l’on se rapproche du jour J.
 - Le comportement est volontairement proche d’une **prévision météo** :
   explicable, contrainte et incertaine par nature.
+- L’ajustement météorologique est **secondaire**, **non déterminant** et **désactivable**.
+- Il ne sert qu’à améliorer la cohérence statistique dans les zones d’hésitation.
+- Le modèle reste intégralement piloté par les données RTE et les règles Tempo.
 
