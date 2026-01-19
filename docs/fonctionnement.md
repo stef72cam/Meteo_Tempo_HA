@@ -25,7 +25,8 @@ Il ne s’agit **pas** d’un modèle d’apprentissage automatique,
 mais d’un **système déterministe** fondé sur :
 - des indicateurs physiques (consommation, production),
 - des règles Tempo connues,
-- une logique probabiliste progressive.
+- une logique probabiliste progressive,
+-  **un ajustement météorologique optionnel basé sur l’écart thermique national**.
 
 ---
 
@@ -39,6 +40,12 @@ mais d’un **système déterministe** fondé sur :
 ### EDF Tempo
 - Couleur officielle J+1 (override)
 - Nombre de jours restants par couleur (bleu / blanc / rouge)
+
+### Météo (indice thermique national)
+- Température moyenne journalière nationale
+- Normales saisonnières associées
+- Données issues de [`Open Meteo`](https://open-meteo.com/)(utilisation non commerciale)
+- Utilisées uniquement comme **biais probabiliste faible et borné**
 
 ---
 
@@ -58,6 +65,46 @@ par rapport à une référence annuelle.
 Les transitions sont **progressives** :  
 aucun seuil ne provoque de basculement brutal.
 
+---
+## Ajustement météorologique (v1.2)
+
+À partir de la version 1.2, le modèle intègre un **biais météorologique optionnel**, basé sur l’écart entre la température nationale observée et les normales saisonnières.
+
+Ce biais :
+- **n’influence jamais directement le Z-score**
+- n’écrase aucune probabilité existante
+- agit uniquement comme un **affineur probabiliste**
+
+### Principe général
+
+Le biais météo repose sur un **transfert progressif des probabilités**, avec la couleur **blanc** comme zone tampon :
+
+- Temps plus doux que la normale :
+  - Rouge → Blanc → Bleu
+- Temps plus froid que la normale :
+  - Bleu → Blanc → Rouge
+
+Aucun transfert direct Bleu ↔ Rouge n’est autorisé.
+
+### Intensité du biais
+
+L’intensité dépend de l’écart thermique absolu (`|delta_T|`) :
+
+- < 0.5°C : aucun effet
+- 0.5 à 1.5°C : biais très faible
+- 1.5 à 3°C : biais modéré
+- > 3°C : biais maximal (borné)
+
+La quantité déplacée reste volontairement faible afin de :
+- préserver la hiérarchie issue du Z-score
+- éviter tout emballement artificiel
+
+### Objectif
+
+- Réduire les faux positifs rouges en conditions très douces
+- Réduire les faux positifs bleus en conditions très froides
+- Améliorer la cohérence dans les zones d’hésitation (probabilités proches)
+  
 ---
 
 ## Horizon de prévision et fiabilité
@@ -214,6 +261,9 @@ Le score (1 à 5) dépend de :
 - la distance temporelle (proche / moyen / lointain)
 - la stabilité des données ENR
 - la cohérence avec les règles Tempo
+  
+  - L’ajustement météorologique n’augmente jamais artificiellement le score de confiance.
+    Il peut au contraire maintenir une confiance basse lorsque les scénarios restent ouverts.
 
 ### Dégradation volontaire
 À partir de **J+4** :
@@ -281,6 +331,15 @@ Choix volontaire :
 - explicable
 - maîtrisable
 - ajustable manuellement
+
+### 6. Météo non déterminante
+L’ajustement météo :
+- ne peut pas inverser une situation de tension forte
+- n’est pas utilisé pour créer des certitudes
+- ne modifie jamais la valeur de Z
+
+Il agit uniquement comme un correcteur de cohérence statistique afin de limiter au maximum possible les limites du point 4 ci-dessus.
+
 
 ---
 
