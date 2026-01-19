@@ -7,10 +7,13 @@ import math
 from collections import defaultdict
 from urllib.request import Request, urlopen
 from urllib.parse import urlencode
-from datetime import date, datetime
+from datetime import datetime
 
 CLIENT_ID = "REMPLIR ICI"
 CLIENT_SECRET = "REMPLIR ICI"
+ENABLE_METEO = True          #Inscrire FALSE si non utilisé
+ENABLE_DEBUG = False         #Inscrire TRUE si utilisé
+
 
 TOKEN_URL = "https://digital.iservices.rte-france.com/token/oauth/"
 CONS_SHORT_URL = "https://digital.iservices.rte-france.com/open_api/consumption/v1/short_term"
@@ -18,318 +21,56 @@ CONS_WEEK_URL = "https://digital.iservices.rte-france.com/open_api/consumption/v
 GEN_FORECAST_URL = "https://digital.iservices.rte-france.com/open_api/generation_forecast/v3/forecasts"
 CONS_ANNUAL_URL = "https://digital.iservices.rte-france.com/open_api/consumption/v1/annual_forecasts"
 
-Z_WHITE_EXPANSION = 0.30          # décale le seuil bleu/blanc vers le bas
-WHITE_MIDZONE_BOOST = 1.2         # boost du score blanc quand Z est médian
-BLUE_MIDZONE_PENALTY = 0.85        # petite pénalité sur bleu dans la zone médiane
+Z_WHITE_EXPANSION = 0.30         # décale le seuil bleu/blanc vers le bas
+WHITE_MIDZONE_BOOST = 1.2        # boost du score blanc quand Z est médian
+BLUE_MIDZONE_PENALTY = 0.85      # petite pénalité sur bleu dans la zone médiane
 C_MEAN = 46050.0
 C_STD = 2160.0
+
 RED_TOTAL = 22
 WHITE_TOTAL = 43
 BLUE_TOTAL = 300
+
 SEASON_LENGTH = 151  # 01/11 -> 31/03
-TARGET_RED_DENSITY = RED_TOTAL / SEASON_LENGTH  # densité "normale" de rouges
+TARGET_RED_DENSITY = RED_TOTAL / SEASON_LENGTH   # densité "normale" de rouges
+
+
 # Valeurs par défaut (si aucun argument n'est passé)
 RED_REMAINING = RED_TOTAL
 WHITE_REMAINING = WHITE_TOTAL
 BLUE_REMAINING = BLUE_TOTAL
 REAL_J1 = None
 
-# 1) Lecture des rouges / blancs restants 
+# 1) Lecture des rouges / blancs restants
 try:
     if len(sys.argv) >= 2:
         RED_REMAINING = int(sys.argv[1])
     if len(sys.argv) >= 3:
         WHITE_REMAINING = int(sys.argv[2])
-except:
+except Exception:
     RED_REMAINING = RED_TOTAL
     WHITE_REMAINING = WHITE_TOTAL
 
 # 2) Lecture éventuelle du bleu restant ET/OU de la couleur réelle J+1
 if len(sys.argv) >= 4:
     arg3 = sys.argv[3].strip().lower()
-
     try:
-        # Si c'est un entier → on considère que c'est "jours bleus restants"
         BLUE_REMAINING = int(arg3)
-
-        # Et on regarde éventuellement un 4e argument pour la couleur réelle J+1
         if len(sys.argv) >= 5:
             arg4 = sys.argv[4].strip().lower()
             if arg4 in ("bleu", "blanc", "rouge"):
                 REAL_J1 = arg4
     except ValueError:
-        # Pas un entier → on interprète directement comme couleur J+1
         if arg3 in ("bleu", "blanc", "rouge"):
             REAL_J1 = arg3
 
 
 def base_decision_from_probs(pB: float, pW: float, pR: float) -> str:
-    """Décision brute par argmax sur les probas (bleu / blanc / rouge)."""
     if pB >= pW and pB >= pR:
         return "bleu"
     if pR >= pW:
         return "rouge"
     return "blanc"
-
-
-def get_annual(token):
-    """
-    Récupère les prévisions annuelles.
-
-    - Du 01/01 au 30/11 : appel sans paramètres (comportement par défaut RTE).
-    - Du 01/12 au 31/12 : on récupère N et N+1 (2 appels) pour éviter les trous.
-    - Du 01/01 au 31/01 : on récupère N-1 et N (2 appels) pour éviter les trous
-      et garantir assez d'historique autour du passage d'année.
-    """
-    today = dt.date.today()
-    tz = dt.timezone(dt.timedelta(hours=1))  # +01:00 ; ajuste si besoin
-
-    def _fetch_year(year: int):
-        start_dt = dt.datetime(year, 1, 1, 0, 0, 0, tzinfo=tz)
-        end_dt   = dt.datetime(year + 1, 1, 1, 0, 0, 0, tzinfo=tz)
-        params = {
-            "start_date": start_dt.isoformat(),
-            "end_date":   end_dt.isoformat(),
-        }
-        return http_get_json(CONS_ANNUAL_URL, token, params)
-
-    # Décembre : concat N + N+1
-    if today.month == 12:
-        y = today.year
-        a = _fetch_year(y)
-        b = _fetch_year(y + 1)
-
-        forecasts = []
-        forecasts += a.get("annual_forecasts", []) if isinstance(a, dict) else []
-        forecasts += b.get("annual_forecasts", []) if isinstance(b, dict) else []
-
-        return {"annual_forecasts": forecasts}
-
-    # Début d'année (01/01 -> 31/01) : concat N-1 + N
-    if today.month == 1 and today.day <= 31:
-        y = today.year
-        a = _fetch_year(y - 1)
-        b = _fetch_year(y)
-
-        forecasts = []
-        forecasts += a.get("annual_forecasts", []) if isinstance(a, dict) else []
-        forecasts += b.get("annual_forecasts", []) if isinstance(b, dict) else []
-
-        return {"annual_forecasts": forecasts}
-
-    # Le reste de l'année : appel sans paramètres
-    return http_get_json(CONS_ANNUAL_URL, token)
-
-
-
-def _quantile(values, p: float) -> float:
-    """
-    Quantile linéaire type RTE sur une liste de valeurs.
-    p entre 0 et 1.
-    """
-    if not values:
-        raise ValueError("Liste vide pour le calcul de quantile")
-
-    vals = sorted(values)
-    n = len(vals)
-    if n == 1:
-        return vals[0]
-
-    # Position entre 0 et n-1
-    pos = p * (n - 1)
-    i_low = int(math.floor(pos))
-    i_high = int(math.ceil(pos))
-
-    if i_low == i_high:
-        return vals[i_low]
-
-    frac = pos - i_low
-    return vals[i_low] + frac * (vals[i_high] - vals[i_low])
-
-import datetime as dt
-
-def _extract_load_value(raw):
-    """
-    Extrait une charge moyenne à partir d'un champ RTE qui peut être :
-    - un float/int direct
-    - un dict du type {"value": 12345, "unit": "MW"}
-    - ou autre chose (None, -1, etc.)
-    Retourne un float valide strictement > 0 ou None.
-    """
-    if raw is None:
-        return None
-
-    # Cas dict {"value": xxx, ...}
-    if isinstance(raw, dict):
-        raw = raw.get("value")
-
-    try:
-        val = float(raw)
-    except (TypeError, ValueError):
-        return None
-
-    # On filtre les valeurs non physiques (0, négatives, sentinelles)
-    if val <= 0:
-        return None
-
-    return val
-
-
-def build_daily_data_from_annual_forecasts(annual_json):
-    daily_data = []
-
-    forecasts = annual_json.get("annual_forecasts", [])
-    if not forecasts:
-        return daily_data
-
-    # On parcourt TOUS les blocs (année N, N+1, etc.)
-    for year_block in forecasts:
-        if not isinstance(year_block, dict):
-            continue
-
-        weekly_values = year_block.get("values", [])
-        if not isinstance(weekly_values, list):
-            continue
-
-        # tri par start_date
-        weekly_values = sorted(weekly_values, key=lambda w: w.get("start_date", ""))
-
-        block_data = []
-
-        for w in weekly_values:
-            sd = w.get("start_date")
-            if not sd:
-                continue
-
-            try:
-                start_dt = dt.datetime.fromisoformat(sd.replace("Z", "+00:00"))
-            except Exception:
-                continue
-
-            start_date = start_dt.date()
-
-            # 1) moyennes hebdo déclarées
-            mean_load = _extract_load_value(w.get("average_load_monday_to_sunday"))
-            if mean_load is None:
-                mean_load = _extract_load_value(w.get("average_load_saturday_to_friday"))
-
-            # 2) fallback sur (weekly_minimum + weekly_maximum)/2
-            if mean_load is None:
-                weekly_min = _extract_load_value(w.get("weekly_minimum"))
-                weekly_max = _extract_load_value(w.get("weekly_maximum"))
-                if weekly_min is not None and weekly_max is not None:
-                    mean_load = 0.5 * (weekly_min + weekly_max)
-
-            if mean_load is None:
-                continue
-
-            # 3) projection 7 jours
-            for k in range(7):
-                d = start_date + dt.timedelta(days=k)
-                block_data.append({
-                    "date": d.isoformat(),
-                    "c_net_mean": float(mean_load),
-                })
-
-        # Filtrage sur l'intervalle du bloc si possible (sur block_data uniquement !)
-        try:
-            start_block = dt.datetime.fromisoformat(year_block["start_date"].replace("Z", "+00:00")).date()
-            end_block   = dt.datetime.fromisoformat(year_block["end_date"].replace("Z", "+00:00")).date()
-
-            block_data = [
-                row for row in block_data
-                if start_block <= dt.date.fromisoformat(row["date"]) < end_block
-            ]
-        except Exception:
-            pass
-
-        daily_data.extend(block_data)
-
-    # Dédoublonnage par date (si plusieurs blocs couvrent un même jour)
-    # On garde la dernière valeur rencontrée.
-    by_date = {}
-    for row in daily_data:
-        by_date[row["date"]] = row
-
-    daily_data = sorted(by_date.values(), key=lambda x: x["date"])
-    return daily_data
-
-
-
-
-
-def compute_z_rte_like(target_date, c_net_today, daily_data, window_days: int = 365, return_debug: bool = False):
-    if isinstance(target_date, str):
-        target_date = datetime.strptime(target_date, "%Y-%m-%d").date()
-
-    history_vals = []
-    used_first = None
-    used_last = None
-    used_count = 0
-
-    for entry in daily_data:
-        try:
-            d = datetime.strptime(entry["date"], "%Y-%m-%d").date()
-        except Exception:
-            continue
-
-        if d >= target_date:
-            break
-
-        if (target_date - d).days <= window_days:
-            v = entry.get("c_net_mean")
-            try:
-                v = float(v)
-            except (TypeError, ValueError):
-                continue
-
-            # On ne garde que les valeurs physiques positives
-            if v > 0:
-                history_vals.append(v)
-                used_count += 1
-                if used_first is None:
-                    used_first = d
-                used_last = d
-
-    debug = {
-        "window_days": window_days,
-        "window_end_inclusive": target_date.isoformat(),
-        "window_start_inclusive": (target_date - dt.timedelta(days=window_days)).isoformat(),
-        "history_count": used_count,
-        "history_first_date": used_first.isoformat() if used_first else None,
-        "history_last_date": used_last.isoformat() if used_last else None,
-    }
-
-    if len(history_vals) < 3:
-        # fallback std propre
-        m = sum(history_vals) / len(history_vals) if history_vals else c_net_today
-        var = sum((x - m) ** 2 for x in history_vals) / max(1, len(history_vals) - 1) if len(history_vals) > 1 else 1.0
-        std = math.sqrt(var) or 1.0
-        z = (c_net_today - m) / std
-
-        debug["method"] = "fallback_std_small_sample"
-        debug["mean"] = m
-        debug["std"] = std
-
-        return (z, debug) if return_debug else z
-
-    q40 = _quantile(history_vals, 0.4)
-    q80 = _quantile(history_vals, 0.8)
-
-    denom = q80 - q40
-    if abs(denom) < 1e-6:
-        denom = 1e-6
-
-    z = (c_net_today - q40) / denom
-
-    debug["method"] = "rte_like_quantiles"
-    debug["q40"] = q40
-    debug["q80"] = q80
-    debug["denom"] = denom
-
-    return (z, debug) if return_debug else z
-
-
 
 
 def http_post_token():
@@ -357,6 +98,209 @@ def http_get_json(url, token, params=None):
         return json.load(r)
 
 
+def get_annual(token):
+    """
+    Récupère les prévisions annuelles.
+
+    - Du 01/01 au 30/11 : appel sans paramètres.
+    - Décembre : concat N + N+1.
+    - Janvier : concat N-1 + N.
+    """
+    today = dt.date.today()
+    tz = dt.timezone(dt.timedelta(hours=1))  # Europe/Paris hiver
+
+    def _fetch_year(year: int):
+        start_dt = dt.datetime(year, 1, 1, 0, 0, 0, tzinfo=tz)
+        end_dt = dt.datetime(year + 1, 1, 1, 0, 0, 0, tzinfo=tz)
+        params = {"start_date": start_dt.isoformat(), "end_date": end_dt.isoformat()}
+        return http_get_json(CONS_ANNUAL_URL, token, params)
+
+    if today.month == 12:
+        y = today.year
+        a = _fetch_year(y)
+        b = _fetch_year(y + 1)
+        forecasts = []
+        forecasts += a.get("annual_forecasts", []) if isinstance(a, dict) else []
+        forecasts += b.get("annual_forecasts", []) if isinstance(b, dict) else []
+        return {"annual_forecasts": forecasts}
+
+    if today.month == 1:
+        y = today.year
+        a = _fetch_year(y - 1)
+        b = _fetch_year(y)
+        forecasts = []
+        forecasts += a.get("annual_forecasts", []) if isinstance(a, dict) else []
+        forecasts += b.get("annual_forecasts", []) if isinstance(b, dict) else []
+        return {"annual_forecasts": forecasts}
+
+    return http_get_json(CONS_ANNUAL_URL, token)
+
+
+def _quantile(values, p: float) -> float:
+    if not values:
+        raise ValueError("Liste vide pour le calcul de quantile")
+    vals = sorted(values)
+    n = len(vals)
+    if n == 1:
+        return vals[0]
+    pos = p * (n - 1)
+    i_low = int(math.floor(pos))
+    i_high = int(math.ceil(pos))
+    if i_low == i_high:
+        return vals[i_low]
+    frac = pos - i_low
+    return vals[i_low] + frac * (vals[i_high] - vals[i_low])
+
+
+def _extract_load_value(raw):
+    if raw is None:
+        return None
+    if isinstance(raw, dict):
+        raw = raw.get("value")
+    try:
+        val = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if val <= 0:
+        return None
+    return val
+
+
+def build_daily_data_from_annual_forecasts(annual_json):
+    daily_data = []
+    forecasts = annual_json.get("annual_forecasts", [])
+    if not forecasts:
+        return daily_data
+
+    for year_block in forecasts:
+        if not isinstance(year_block, dict):
+            continue
+
+        weekly_values = year_block.get("values", [])
+        if not isinstance(weekly_values, list):
+            continue
+
+        weekly_values = sorted(weekly_values, key=lambda w: w.get("start_date", ""))
+        block_data = []
+
+        for w in weekly_values:
+            sd = w.get("start_date")
+            if not sd:
+                continue
+            try:
+                start_dt = dt.datetime.fromisoformat(sd.replace("Z", "+00:00"))
+            except Exception:
+                continue
+
+            start_date = start_dt.date()
+
+            mean_load = _extract_load_value(w.get("average_load_monday_to_sunday"))
+            if mean_load is None:
+                mean_load = _extract_load_value(w.get("average_load_saturday_to_friday"))
+
+            if mean_load is None:
+                weekly_min = _extract_load_value(w.get("weekly_minimum"))
+                weekly_max = _extract_load_value(w.get("weekly_maximum"))
+                if weekly_min is not None and weekly_max is not None:
+                    mean_load = 0.5 * (weekly_min + weekly_max)
+
+            if mean_load is None:
+                continue
+
+            for k in range(7):
+                d = start_date + dt.timedelta(days=k)
+                block_data.append({"date": d.isoformat(), "c_net_mean": float(mean_load)})
+
+        try:
+            start_block = dt.datetime.fromisoformat(year_block["start_date"].replace("Z", "+00:00")).date()
+            end_block = dt.datetime.fromisoformat(year_block["end_date"].replace("Z", "+00:00")).date()
+            block_data = [
+                row for row in block_data
+                if start_block <= dt.date.fromisoformat(row["date"]) < end_block
+            ]
+        except Exception:
+            pass
+
+        daily_data.extend(block_data)
+
+    by_date = {}
+    for row in daily_data:
+        by_date[row["date"]] = row
+
+    return sorted(by_date.values(), key=lambda x: x["date"])
+
+
+def compute_z(c_net):
+    return (c_net - C_MEAN) / C_STD
+
+
+def compute_z_rte_like(target_date, c_net_today, daily_data, window_days: int = 365, return_debug: bool = False):
+    if isinstance(target_date, dt.date) is False:
+        target_date = datetime.strptime(str(target_date), "%Y-%m-%d").date()
+
+    history_vals = []
+    used_first = None
+    used_last = None
+
+    for entry in daily_data:
+        try:
+            d = datetime.strptime(entry["date"], "%Y-%m-%d").date()
+        except Exception:
+            continue
+
+        if d >= target_date:
+            break
+
+        if (target_date - d).days <= window_days:
+            v = entry.get("c_net_mean")
+            try:
+                v = float(v)
+            except (TypeError, ValueError):
+                continue
+            if v > 0:
+                history_vals.append(v)
+                if used_first is None:
+                    used_first = d
+                used_last = d
+
+    debug = {
+        "window_days": window_days,
+        "window_end_inclusive": target_date.isoformat(),
+        "window_start_inclusive": (target_date - dt.timedelta(days=window_days)).isoformat(),
+        "history_count": len(history_vals),
+        "history_first_date": used_first.isoformat() if used_first else None,
+        "history_last_date": used_last.isoformat() if used_last else None,
+    }
+
+    if len(history_vals) < 3:
+        m = sum(history_vals) / len(history_vals) if history_vals else c_net_today
+        var = (
+            sum((x - m) ** 2 for x in history_vals) / max(1, len(history_vals) - 1)
+            if len(history_vals) > 1 else 1.0
+        )
+        std = math.sqrt(var) or 1.0
+        z = (c_net_today - m) / std
+        debug["method"] = "fallback_std_small_sample"
+        debug["mean"] = m
+        debug["std"] = std
+        return (z, debug) if return_debug else z
+
+    q40 = _quantile(history_vals, 0.4)
+    q80 = _quantile(history_vals, 0.8)
+
+    denom = q80 - q40
+    if abs(denom) < 1e-6:
+        denom = 1e-6
+
+    z = (c_net_today - q40) / denom
+    debug["method"] = "rte_like_quantiles"
+    debug["q40"] = q40
+    debug["q80"] = q80
+    debug["denom"] = denom
+
+    return (z, debug) if return_debug else z
+
+
 def group_daily_avg(values):
     by_day = defaultdict(list)
     for v in values:
@@ -368,25 +312,20 @@ def group_daily_avg(values):
             continue
         try:
             d = dt.datetime.fromisoformat(sd.replace("Z", "+00:00")).date()
-        except:
+        except Exception:
             continue
         try:
             by_day[d].append(float(val))
-        except:
+        except Exception:
             continue
     return {d: sum(lst) / len(lst) for d, lst in by_day.items() if lst}
-    
+
 
 def get_generation(token):
-    # On ne passe que le type : D-1, D-2, D-3
-    params = {
-        "type": "D-1,D-2,D-3",
-    }
+    params = {"type": "D-1,D-2,D-3"}
     data = http_get_json(GEN_FORECAST_URL, token, params)
 
-    # On va d'abord fusionner toutes les filières par timestamp (start_date)
     per_ts = {}
-
     blocks = data.get("forecasts", [])
     if isinstance(blocks, dict):
         blocks = [blocks]
@@ -411,36 +350,28 @@ def get_generation(token):
                 fv = float(val)
             except (TypeError, ValueError):
                 continue
-
-            # On additionne toutes les filières / sous-types sur le même timestamp
             per_ts[sd] = per_ts.get(sd, 0.0) + fv
 
-    # On remet ça au format attendu par group_daily_avg
-    merged = [
-        {"start_date": sd, "value": fv}
-        for sd, fv in per_ts.items()
-    ]
-
-    # Et on regroupe par jour (moyenne journalière de la prod totale)
+    merged = [{"start_date": sd, "value": fv} for sd, fv in per_ts.items()]
     return group_daily_avg(merged)
 
 
-
 def get_short_term(token):
-   data = http_get_json(CONS_SHORT_URL, token)
-   values = []
-   blocks = data.get("short_term", [])
-   if isinstance(blocks, dict):
-       blocks = [blocks]
-   for block in blocks:
-       if not isinstance(block, dict):
-           continue
-       vals = block.get("values", [])
-       if isinstance(vals, dict):
-           vals = [vals]
-       if isinstance(vals, list):
-           values.extend([v for v in vals if isinstance(v, dict)])
-   return group_daily_avg(values)
+    data = http_get_json(CONS_SHORT_URL, token)
+    values = []
+    blocks = data.get("short_term", [])
+    if isinstance(blocks, dict):
+        blocks = [blocks]
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        vals = block.get("values", [])
+        if isinstance(vals, dict):
+            vals = [vals]
+        if isinstance(vals, list):
+            values.extend([v for v in vals if isinstance(v, dict)])
+    return group_daily_avg(values)
+
 
 def get_weekly(token):
     data = http_get_json(CONS_WEEK_URL, token)
@@ -459,17 +390,15 @@ def get_weekly(token):
     return group_daily_avg(values)
 
 
-def compute_z(c_net):
-    return (c_net - C_MEAN) / C_STD
-
-
 def tempo_year_start(d):
     s = dt.date(d.year, 9, 1)
     return s if d >= s else dt.date(d.year - 1, 9, 1)
 
+
 def tempo_year_end_inclusive(d: dt.date) -> dt.date:
     start = tempo_year_start(d)
     return dt.date(start.year + 1, 8, 31)
+
 
 def day_index(d):
     return (d - tempo_year_start(d)).days + 1
@@ -480,65 +409,6 @@ def thresholds(j, red_rem, white_rem):
     s_br = 4.00 - 0.015 * j - 0.026 * stock_br
     s_r = 3.15 - 0.010 * j - 0.031 * red_rem
     return s_br, s_r
-
-def red_season_bounds(d: dt.date):
-    """
-    Saison rouge Tempo : 01/11 -> 31/03 (inclusive).
-    IMPORTANT : en janvier/février/mars, le début est 01/11 de l'année précédente.
-    Retourne (start_date, end_date_inclusive)
-    """
-    if d.month >= 11:
-        start = dt.date(d.year, 11, 1)
-        end = dt.date(d.year + 1, 3, 31)
-    else:
-        start = dt.date(d.year - 1, 11, 1)
-        end = dt.date(d.year, 3, 31)
-    return start, end
-
-
-def is_in_red_season(d: dt.date) -> bool:
-    start, end = red_season_bounds(d)
-    return start <= d <= end
-
-
-def red_season_day_index(d: dt.date) -> int:
-    """Index jour dans la saison rouge (0..), 0 = 01/11."""
-    start, _ = red_season_bounds(d)
-    return (d - start).days
-
-
-def red_season_progress(d: dt.date) -> float:
-    """Progression 0..1 dans la saison rouge (inclusive)."""
-    start, end = red_season_bounds(d)
-    if d <= start:
-        return 0.0
-    if d >= end:
-        return 1.0
-    denom = (end - start).days
-    return (d - start).days / denom if denom > 0 else 0.0
-
-def red_floor_from_z(z: float) -> float:
-    """
-    Plancher rouge dynamique en fonction de Z.
-    Objectif : moins de faux positifs rouge quand Z est juste "moyen",
-    mais un plancher qui remonte quand Z devient vraiment tendu.
-    """
-    if z is None:
-        return 0.0
-
-    # Zone basse/moyenne : on évite de forcer du rouge
-    if z < 1:
-        return 0.00
-    if z < 1.10:
-        return 0.08
-    if z < 1.20:
-        return 0.12
-    if z < 1.25:
-        return 0.15
-    # Zone tendue : rouge doit avoir une vraie présence
-    if z < 1.30:
-        return 0.18
-    return 0.22
 
 
 def is_french_public_holiday(d: dt.date) -> bool:
@@ -591,24 +461,35 @@ def allowed(color, d):
     return True
 
 
-def red_target_used_fraction(d: dt.date) -> float:
-    """
-    Fraction cible des rouges qui devraient être utilisés à la date d
-    (courbe non linéaire : début prudent, coeur d'hiver agressif, fin de saison deadline).
-    """
-    # bornes saison rouge
-    start, end = red_season_bounds(d)
+def red_season_bounds(d: dt.date):
+    if d.month >= 11:
+        start = dt.date(d.year, 11, 1)
+        end = dt.date(d.year + 1, 3, 31)
+    else:
+        start = dt.date(d.year - 1, 11, 1)
+        end = dt.date(d.year, 3, 31)
+    return start, end
 
-    # repères (à ajuster au besoin)
-    # - 10/12 : 5% utilisés
-    # - 31/01 : 65% utilisés
-    # - 20/02 : 95% utilisés
-    # - 31/03 : 100% utilisés
-    y = start.year  # année du 01/11
+
+def count_red_eligible_days_left(start_date: dt.date, end_date: dt.date) -> int:
+    if end_date < start_date:
+        return 0
+    n = 0
+    d = start_date
+    while d <= end_date:
+        if allowed("rouge", d):
+            n += 1
+        d += dt.timedelta(days=1)
+    return n
+
+
+def red_target_used_fraction(d: dt.date) -> float:
+    start, end = red_season_bounds(d)
+    y = start.year
     d1 = dt.date(y, 12, 10)
     d2 = dt.date(y + 1, 1, 31)
     d3 = dt.date(y + 1, 2, 20)
-    d4 = end  # 31/03
+    d4 = end
 
     def lerp(a_date, b_date, a_val, b_val):
         if d <= a_date:
@@ -626,21 +507,371 @@ def red_target_used_fraction(d: dt.date) -> float:
         return lerp(d2, d3, 0.65, 0.95)
     return lerp(d3, d4, 0.95, 1.00)
 
-def count_red_eligible_days_left(start_date: dt.date, end_date: dt.date) -> int:
-    """
-    Compte le nombre de jours "éligibles rouge" entre start_date et end_date inclus.
-    Éligible = jour ouvré (lun-ven) non férié, et dans la saison rouge Tempo (via allowed()).
-    """
-    if end_date < start_date:
-        return 0
 
-    n = 0
-    d = start_date
-    while d <= end_date:
-        if allowed("rouge", d):
-            n += 1
-        d += dt.timedelta(days=1)
-    return n
+def red_floor_from_z(z: float) -> float:
+    if z is None:
+        return 0.0
+    if z < 1:
+        return 0.00
+    if z < 1.10:
+        return 0.08
+    if z < 1.20:
+        return 0.12
+    if z < 1.25:
+        return 0.15
+    if z < 1.30:
+        return 0.18
+    return 0.22
+
+
+# --- Indicateur national type EDF (degrés-jours) via Open-Meteo ---
+T_BASE = 17.0
+
+
+AIRPORTS = [
+    ("Abbeville", 50.1360, 1.8340, 1.0),
+    ("Bale_Mulhouse", 47.5896, 7.5299, 2.0),
+    ("Bordeaux_Merignac", 44.8283, -0.7156, 4.0),
+    ("Boulogne", 50.6589, 1.6246, 1.0),
+    ("Bourges", 47.0581, 2.3703, 4.2),
+    ("Bourg_St_Maurice", 45.6170, 6.7680, 2.75),
+    ("Brest_Guipavas", 48.4479, -4.4185, 4.2),
+    ("Caen_Carpiquet", 49.1733, -0.4500, 2.5),
+    ("Clermont_Ferrand_Aulnat", 45.7867, 3.1692, 2.75),
+    ("Dijon_Longvic", 47.2689, 5.0883, 1.0),
+    ("Le_Luc_Le_Cannet", 43.3847, 6.3872, 1.2),
+    ("Lille_Lesquin", 50.5619, 3.0894, 3.0),
+    ("Limoges_Bellegarde", 45.8614, 1.1794, 3.2),
+    ("Lyon_St_Exupery", 45.7256, 5.0811, 5.5),
+    ("Marseille_Marignane", 43.4372, 5.2150, 2.4),
+    ("Montpellier_Frejorgues", 43.5762, 3.9630, 1.6),
+    ("Nancy_Essey", 48.6921, 6.2303, 3.0),
+    ("Nantes_Atlantique", 47.1532, -1.6107, 4.2),
+    ("Nevers_Marzy", 46.9990, 3.1130, 1.5),
+    ("Nice_Cote_dAzur", 43.6653, 7.2150, 3.6),
+    ("Nimes_Courbessac", 43.8564, 4.4050, 2.4),
+    ("Orange_Caritat", 44.1405, 4.8667, 1.2),
+    ("Paris_Montsouris", 48.8218, 2.3376, 11.25),
+    ("Perpignan_Rivesaltes", 42.7404, 2.8707, 1.6),
+    ("Rennes_St_Jacques", 48.0695, -1.7348, 4.2),
+    ("Saint_Auban", 44.0583, 5.9917, 1.2),
+    ("Strasbourg_Entzheim", 48.5383, 7.6282, 1.0),
+    ("Tarbes_Lourdes", 43.1786, -0.0064, 4.0),
+    ("Toulouse_Blagnac", 43.6306, 1.3638, 1.6),
+    ("Tours_Parcay_Meslay", 47.4322, 0.7276, 4.2),
+    ("Trappes", 48.7742, 1.9936, 11.25),
+    ("Troyes_Barberey", 48.3239, 4.0179, 1.5),
+]
+def fetch_open_meteo_daily_tmin_tmax(latitudes, longitudes, forecast_days=8):
+    base_url = "https://api.open-meteo.com/v1/forecast"
+    params = {
+        "latitude": ",".join(f"{x:.4f}" for x in latitudes),
+        "longitude": ",".join(f"{x:.4f}" for x in longitudes),
+        "daily": "temperature_2m_min,temperature_2m_max",
+        "timezone": "Europe/Paris",
+        "forecast_days": str(forecast_days),
+    }
+    url = f"{base_url}?{urlencode(params)}"
+    with urlopen(url, timeout=20) as r:
+        data = json.loads(r.read().decode("utf-8"))
+
+    # si Open-Meteo renvoie une erreur explicite
+    if isinstance(data, dict) and data.get("error"):
+        raise RuntimeError(f"Open-Meteo error: {data.get('reason')}")
+
+    return data
+
+
+def compute_national_tmoy(today: dt.date, offsets=range(1, 4)):
+    """
+    Retourne {date: Tmoy_nationale} avec Tmoy=(Tmin+Tmax)/2 pondéré par station.
+    """
+    latitudes = [a[1] for a in AIRPORTS]
+    longitudes = [a[2] for a in AIRPORTS]
+    poids_total = sum(a[3] for a in AIRPORTS)
+
+    data = fetch_open_meteo_daily_tmin_tmax(latitudes, longitudes, forecast_days=max(offsets) + 1)
+
+    # Open-Meteo peut renvoyer dict (mono) ou liste (multi)
+    if isinstance(data, dict):
+        data = [data]
+
+    acc = {off: 0.0 for off in offsets}
+    used = {off: 0.0 for off in offsets}
+
+    for station_data, (_, _, _, poids) in zip(data, AIRPORTS):
+        daily = station_data.get("daily", {})
+        tmins = daily.get("temperature_2m_min", [])
+        tmaxs = daily.get("temperature_2m_max", [])
+        if len(tmins) < (max(offsets) + 1) or len(tmaxs) < (max(offsets) + 1):
+            continue
+
+        for off in offsets:
+            tmoy = (tmins[off] + tmaxs[off]) / 2.0
+            acc[off] += tmoy * poids
+            used[off] += poids
+
+    out = {}
+    for off in offsets:
+        d = today + dt.timedelta(days=off)
+        out[d] = round(acc[off] / used[off], 2) if used[off] > 0 else None
+    return out
+
+def meteo_strength_from_delta(delta_T: float | None) -> float:
+    """
+    Transforme delta_T (T_future - T_norm) en intensité de shift sur les probas.
+    Valeurs petites et bornées (pas de magie).
+    """
+    if delta_T is None:
+        return 0.0
+    a = abs(delta_T)
+    if a < 0.5:
+        return 0.00
+    if a < 1.5:
+        return 0.03
+    if a < 3.0:
+        return 0.06
+    return 0.09
+
+def apply_meteo_shift_probs(pB: float, pW: float, pR: float, delta_T: float | None):
+    """
+    Applique un biais météo en CHAÎNE:
+    - doux (delta_T > 0): R->W puis W->B
+    - froid (delta_T < 0): B->W puis W->R
+    Jamais de transfert direct rouge<->bleu.
+    """
+    if any(v is None for v in (pB, pW, pR)) or delta_T is None:
+        return pB, pW, pR, 0.0
+
+    s = meteo_strength_from_delta(delta_T)
+    if s <= 0:
+        return pB, pW, pR, 0.0
+
+    # Copie
+    b, w, r = float(pB), float(pW), float(pR)
+
+    if delta_T > 0:
+        # doux : rouge -> blanc
+        x1 = min(s, r)
+        r -= x1
+        w += x1
+        # puis blanc -> bleu
+        x2 = min(s, w)
+        w -= x2
+        b += x2
+        applied = x1 + x2
+    else:
+        # froid : bleu -> blanc
+        x1 = min(s, b)
+        b -= x1
+        w += x1
+        # puis blanc -> rouge
+        x2 = min(s, w)
+        w -= x2
+        r += x2
+        applied = x1 + x2
+
+    # renormalisation
+    tot = b + w + r
+    if tot > 0:
+        b, w, r = b / tot, w / tot, r / tot
+
+    return b, w, r, round(applied, 4)
+
+
+def rte_norm_temp(d: dt.date) -> float | None:
+    """
+    Norme RTE 1991-2020 pour le jour calendaire.
+    """
+    key = (d.month, d.day)
+    NORMS = {
+        (11, 1): 11.14,
+        (11, 2): 10.08,
+        (11, 3): 10.92,
+        (11, 4): 10.26,
+        (11, 5): 9.69,
+        (11, 6): 9.16,
+        (11, 7): 9.16,
+        (11, 8): 9.63,
+        (11, 9): 9.71,
+        (11, 10): 9.51,
+        (11, 11): 9.59,
+        (11, 12): 9.43,
+        (11, 13): 9.33,
+        (11, 14): 8.63,
+        (11, 15): 7.74,
+        (11, 16): 7.92,
+        (11, 17): 7.61,
+        (11, 18): 7.57,
+        (11, 19): 7.44,
+        (11, 20): 7.30,
+        (11, 21): 7.18,
+        (11, 22): 7.01,
+        (11, 23): 6.89,
+        (11, 24): 6.84,
+        (11, 25): 7.16,
+        (11, 26): 6.93,
+        (11, 27): 6.60,
+        (11, 28): 6.36,
+        (11, 29): 6.53,
+        (11, 30): 6.73,
+        (12, 1): 6.53,
+        (12, 2): 6.41,
+        (12, 3): 6.42,
+        (12, 4): 6.63,
+        (12, 5): 6.79,
+        (12, 6): 6.20,
+        (12, 7): 5.84,
+        (12, 8): 5.96,
+        (12, 9): 5.72,
+        (12, 10): 5.35,
+        (12, 11): 5.26,
+        (12, 12): 5.37,
+        (12, 13): 5.28,
+        (12, 14): 4.72,
+        (12, 15): 4.62,
+        (12, 16): 5.27,
+        (12, 17): 5.48,
+        (12, 18): 5.59,
+        (12, 19): 5.75,
+        (12, 20): 5.45,
+        (12, 21): 5.51,
+        (12, 22): 5.61,
+        (12, 23): 5.41,
+        (12, 24): 5.49,
+        (12, 25): 5.39,
+        (12, 26): 4.85,
+        (12, 27): 4.71,
+        (12, 28): 4.58,
+        (12, 29): 4.61,
+        (12, 30): 4.96,
+        (12, 31): 4.81,
+        (1, 1): 4.73,
+        (1, 2): 5.10,
+        (1, 3): 4.88,
+        (1, 4): 4.57,
+        (1, 5): 4.79,
+        (1, 6): 5.12,
+        (1, 7): 4.35,
+        (1, 8): 4.31,
+        (1, 9): 4.85,
+        (1, 10): 4.92,
+        (1, 11): 4.83,
+        (1, 12): 4.30,
+        (1, 13): 4.54,
+        (1, 14): 4.71,
+        (1, 15): 4.59,
+        (1, 16): 4.85,
+        (1, 17): 5.31,
+        (1, 18): 5.23,
+        (1, 19): 5.70,
+        (1, 20): 5.64,
+        (1, 21): 5.55,
+        (1, 22): 5.73,
+        (1, 23): 5.38,
+        (1, 24): 5.00,
+        (1, 25): 4.80,
+        (1, 26): 4.49,
+        (1, 27): 4.49,
+        (1, 28): 4.91,
+        (1, 29): 4.87,
+        (1, 30): 4.68,
+        (1, 31): 4.57,
+        (2, 1): 5.01,
+        (2, 2): 5.13,
+        (2, 3): 5.57,
+        (2, 4): 5.80,
+        (2, 5): 6.17,
+        (2, 6): 6.34,
+        (2, 7): 5.96,
+        (2, 8): 6.11,
+        (2, 9): 5.77,
+        (2, 10): 5.19,
+        (2, 11): 5.27,
+        (2, 12): 5.54,
+        (2, 13): 4.76,
+        (2, 14): 4.76,
+        (2, 15): 4.90,
+        (2, 16): 4.73,
+        (2, 17): 5.04,
+        (2, 18): 5.31,
+        (2, 19): 5.24,
+        (2, 20): 5.40,
+        (2, 21): 5.30,
+        (2, 22): 5.46,
+        (2, 23): 6.00,
+        (2, 24): 6.16,
+        (2, 25): 6.27,
+        (2, 26): 6.39,
+        (2, 27): 6.52,
+        (2, 28): 7.03,
+        (3, 1): 6.90,
+        (3, 2): 6.85,
+        (3, 3): 6.78,
+        (3, 4): 6.65,
+        (3, 5): 6.61,
+        (3, 6): 6.97,
+        (3, 7): 7.46,
+        (3, 8): 7.83,
+        (3, 9): 7.96,
+        (3, 10): 8.03,
+        (3, 11): 8.45,
+        (3, 12): 8.47,
+        (3, 13): 8.30,
+        (3, 14): 8.65,
+        (3, 15): 9.04,
+        (3, 16): 9.32,
+        (3, 17): 9.24,
+        (3, 18): 9.32,
+        (3, 19): 9.12,
+        (3, 20): 9.34,
+        (3, 21): 9.39,
+        (3, 22): 9.23,
+        (3, 23): 9.38,
+        (3, 24): 9.63,
+        (3, 25): 9.51,
+        (3, 26): 9.23,
+        (3, 27): 9.26,
+        (3, 28): 9.23,
+        (3, 29): 9.37,
+        (3, 30): 9.35,
+        (3, 31): 9.90,
+    }
+
+    # Année bissextile : si 29/02 absent, on prend 28/02
+    if key == (2, 29):
+        return NORMS.get((2, 29), NORMS.get((2, 28)))
+
+    return NORMS.get(key)
+
+
+def shrink_probs(pB: float, pW: float, pR: float, lam: float):
+    u = 1.0 / 3.0
+    pB2 = (1 - lam) * pB + lam * u
+    pW2 = (1 - lam) * pW + lam * u
+    pR2 = (1 - lam) * pR + lam * u
+    s = pB2 + pW2 + pR2
+    if s <= 0:
+        return u, u, u
+    return pB2 / s, pW2 / s, pR2 / s
+
+
+def mask_probs_by_calendar(d, pB: float, pW: float, pR: float):
+    wd = d.weekday()
+    if wd == 6:
+        return 1.0, 0.0, 0.0
+    if not allowed("rouge", d):
+        pR = 0.0
+    if not allowed("blanc", d):
+        pW = 0.0
+    if wd == 5:
+        pR = 0.0
+    s = pB + pW + pR
+    if s <= 0:
+        if wd == 5:
+            return 0.65, 0.35, 0.0
+        return 0.8, 0.2, 0.0
+    return pB / s, pW / s, pR / s
 
 
 def decide_color_with_probs(d, z, j, red_rem, white_rem, blue_rem):
@@ -741,9 +972,9 @@ def decide_color_with_probs(d, z, j, red_rem, white_rem, blue_rem):
         elif d.day < 20:
             edf_red_factor *= 0.7
         else:
-            edf_red_factor *= 0.9
+            edf_red_factor *= 1
     elif d.month in (1, 2):
-        edf_red_factor *= 1.0
+        edf_red_factor *= 1.05
     elif d.month == 3:
         if d.day <= 15:
             edf_red_factor *= 0.7
@@ -856,14 +1087,14 @@ def decide_color_with_probs(d, z, j, red_rem, white_rem, blue_rem):
         # 2) Rouge : réveil progressif seulement très près du seuil rouge
         if allowed_red:
             # zone d'approche finale du seuil rouge : [s_r_adj - 0.07 ; s_r_adj]
-            start = s_r_adj - 0.07
+            start = s_r_adj - 0.12
             if start <= z < s_r_adj and score_r < score_w:
                 # t: 0 -> 1 quand on approche s_r_adj
                 t = (z - start) / max(1e-6, (s_r_adj - start))
                 # rouge remonte un peu, mais ne dépasse pas le blanc en zone médiane
                 score_r = max(
                     score_r,
-                    score_w * (0.40 + 0.40 * t)  # 0.35 -> 0.65 du blanc
+                    score_w * (0.45 + 0.55 * t)  # 0.45 -> 0.55 du blanc
                 )
 
 
@@ -1318,22 +1549,19 @@ def decide_color_with_probs(d, z, j, red_rem, white_rem, blue_rem):
     return couleur, red_rem, white_rem, blue_rem, p_bleu, p_blanc, p_rouge
 
 
-def decide_color_with_wrappers(d, z, j, red_rem, white_rem, blue_rem):
+
+def decide_color_with_wrappers_no_stock(d, z, j, red_rem, white_rem, blue_rem):
     """
-    Wrapper autour de decide_color_with_probs:
-    - force bleu le dimanche
-    - interdit rouge si non autorisé (samedi / férié / hors saison / etc.)
-    - recalcule les stocks proprement à partir des stocks d'entrée
+    Wrapper qui:
+    - force bleu dimanche
+    - interdit rouge si non autorisé
+    - MAIS ne touche PAS aux stocks
     """
-    # On récupère la couleur + les probas (on ignore les stocks retournés par la fonction interne)
     couleur, _, _, _, pB, pW, pR = decide_color_with_probs(d, z, j, red_rem, white_rem, blue_rem)
 
-    # Dimanche → bleu forcé
     if d.weekday() == 6:
-        couleur = "bleu"
-        pB, pW, pR = 1.0, 0.0, 0.0
+        return "bleu", 1.0, 0.0, 0.0
 
-    # Si le modèle sort "rouge" mais que rouge est interdit ce jour-là → on retire rouge
     if couleur == "rouge" and not allowed("rouge", d):
         pR = 0.0
         s = pB + pW
@@ -1345,20 +1573,23 @@ def decide_color_with_wrappers(d, z, j, red_rem, white_rem, blue_rem):
             pW /= s
         couleur = "bleu" if pB >= pW else "blanc"
 
-    # Mise à jour des stocks à partir des stocks d'entrée (propre, sans double-décrément)
-    red2, white2, blue2 = red_rem, white_rem, blue_rem
-    if couleur == "rouge":
-        red2 = max(0, red2 - 1)
-    elif couleur == "blanc":
-        white2 = max(0, white2 - 1)
-    else:
-        blue2 = max(0, blue2 - 1)
-
-    return couleur, red2, white2, blue2, pB, pW, pR
+    return couleur, pB, pW, pR
 
 
- 
-def _compute_confidence_score(couleur, p_bleu, p_blanc, p_rouge, red_rem, white_rem, offset):
+def _confidence_label(score):
+    if score is None:
+        return "Indisponible"
+    if score >= 4.5:
+        return "Très forte"
+    if score >= 3.5:
+        return "Forte"
+    if score >= 2.5:
+        return "Moyenne"
+    if score >= 1.5:
+        return "Faible"
+    return "Très faible"
+
+def _compute_confidence_score(couleur, p_bleu, p_blanc, p_rouge, red_rem, white_rem, offset, gen_source=None):
     if any(v is None for v in (p_bleu, p_blanc, p_rouge)):
         return None
 
@@ -1520,6 +1751,16 @@ def _compute_confidence_score(couleur, p_bleu, p_blanc, p_rouge, red_rem, white_
             # que EDF peut basculer d'une couleur à l'autre.
             raw -= 0.4
 
+    # 5 ter) Fiabilité des données ENR (impact fort sur J+4..J+6)
+    if gen_source in ("carryover_last_known", "estime_ratio_J+1"):
+        if offset >= 4:
+            raw -= 1.0   # gros doute : on recycle/estime l'ENR
+        elif offset == 3:
+            raw -= 0.6
+        else:
+            raw -= 0.3
+
+
     # 6) Petit boost J+1 / J+2 si le modèle est assez net
     if offset in (1, 2):
         if p1 >= 0.46 and gap >= 0.03 and raw < 3.0:
@@ -1540,19 +1781,6 @@ def _compute_confidence_score(couleur, p_bleu, p_blanc, p_rouge, red_rem, white_
        
     return score
 
-
-def _confidence_label(score):
-    if score is None:
-        return "Indisponible"
-    if score >= 4.5:
-        return "Très forte"
-    if score >= 3.5:
-        return "Forte"
-    if score >= 2.5:
-        return "Moyenne"
-    if score >= 1.5:
-        return "Faible"
-    return "Très faible"
 
 
 def _build_confidence_comment(couleur, p_bleu, p_blanc, p_rouge, score, offset):
@@ -1658,14 +1886,12 @@ def _build_confidence_comment(couleur, p_bleu, p_blanc, p_rouge, score, offset):
 
 
 def build_forecast(real_j1=REAL_J1):
-
     token = get_token()
 
     cons_short = get_short_term(token)
     cons_week = get_weekly(token)
     gen = get_generation(token)
-    
-    # Annual forecasts RTE → daily_data pour Z “façon RTE”
+
     try:
         annual = get_annual(token)
         daily_data = build_daily_data_from_annual_forecasts(annual)
@@ -1674,23 +1900,38 @@ def build_forecast(real_j1=REAL_J1):
         daily_data = []
 
     today = dt.date.today()
+
+    # --- Température nationale prévue (Tmoy) ---
+    meteo_error = None
+
+    if ENABLE_METEO:
+        try:
+            tnat_map = compute_national_tmoy(today, offsets=range(1, 4))
+        except Exception as e:
+            tnat_map = {}
+            meteo_error = repr(e)
+            print("Open-Meteo ERROR:", meteo_error, file=sys.stderr)
+    else:
+        tnat_map = {}
+        meteo_error = "meteo_disabled_manual"
+
+
+
     red_rem = RED_REMAINING
     white_rem = WHITE_REMAINING
     blue_rem = BLUE_REMAINING
 
     days = []
-    last_gen_val = None  # dernière valeur ENR connue (RTE ou estimée)
+    last_gen_val = None
 
-    # -------------------------
-    # Construction brute J+1 à J+6
-    # -------------------------
     for offset in range(1, 7):
         d = today + dt.timedelta(days=offset)
 
-        # Conso J+offset (short term ou weekly)
+        # init par jour (évite pollution)
+        meteo_bias = 0.0
+
         conso = cons_short.get(d) or cons_week.get(d)
 
-        # ENR brute RTE
         gen_val = gen.get(d)
         gen_source = None
 
@@ -1698,7 +1939,6 @@ def build_forecast(real_j1=REAL_J1):
             gen_source = "RTE"
             last_gen_val = gen_val
 
-        # Estimation ENR uniquement J+2/J+3 si RTE n’a rien
         if gen_val is None and conso is not None and offset in (2, 3):
             d_j1 = today + dt.timedelta(days=1)
             conso_j1 = cons_short.get(d_j1) or cons_week.get(d_j1)
@@ -1706,21 +1946,18 @@ def build_forecast(real_j1=REAL_J1):
 
             if conso_j1 is not None and gen_j1 is not None and conso_j1 > 0:
                 ratio = gen_j1 / conso_j1
-
-                if ratio < 0.0:
-                    ratio = 0.0
-                elif ratio > 0.5:
-                    ratio = 0.5
-
+                ratio = max(0.0, min(0.5, ratio))
                 gen_val = conso * ratio
                 gen_source = "estime_ratio_J+1"
                 last_gen_val = gen_val
 
-        # Si toujours pas d'ENR mais on a une dernière valeur connue → on la réutilise
         if gen_val is None and conso is not None and last_gen_val is not None:
             gen_val = last_gen_val
-            if gen_source is None:
-                gen_source = "carryover_last_known"
+            gen_source = gen_source or "carryover_last_known"
+
+        T_nat = tnat_map.get(d)
+        T_norm = rte_norm_temp(d)
+        delta_T = (T_nat - T_norm) if (T_nat is not None and T_norm is not None) else None
 
         entry = {
             "offset": offset,
@@ -1728,61 +1965,64 @@ def build_forecast(real_j1=REAL_J1):
             "conso": conso,
             "gen": gen_val,
             "gen_source": gen_source,
+            "T_nat": T_nat,
+            "T_norm": T_norm,
+            "delta_T": delta_T,
+            "meteo_bias": 0.0,  # sera mis à jour plus tard si appliqué
         }
 
-        # =========================
-        # DEBUG (1) : contexte annual + tentative Z
-        # =========================
-        entry["debug"] = {
-            "annual_days_count": len(daily_data) if daily_data else 0,
-            "annual_first_date": daily_data[0]["date"] if daily_data else None,
-            "annual_last_date": daily_data[-1]["date"] if daily_data else None,
-            "annual_sample_dates": (
-                [x.get("date") for x in (daily_data[:3] + daily_data[-3:])] if daily_data else None
-            ),
-            "z_try": None,          # "annual_forecast" / "fallback_std_no_daily_data"
-            "z_error": None,        # repr(exception) ou raison filtre
-            "z_error_type": None,   # type(exception) ou "ZFilter"
-        }
+        if ENABLE_DEBUG:
+            entry["debug"] = {
+                "annual_days_count": len(daily_data) if daily_data else 0,
+                "annual_first_date": daily_data[0]["date"] if daily_data else None,
+                "annual_last_date": daily_data[-1]["date"] if daily_data else None,
+                "annual_sample_dates": (
+                    [x.get("date") for x in (daily_data[:3] + daily_data[-3:])] if daily_data else None
+                ),
+                "z_try": None,
+                "z_error": None,
+                "z_error_type": None,
+                "meteo_error": meteo_error,
+            }
+
+
 
         if conso is not None:
             c_net = conso - gen_val if gen_val is not None else conso
             entry["c_net"] = c_net
 
-            # Z “façon RTE” basé sur annual_forecasts, fallback sur l’ancien Z si souci
             try:
                 if daily_data:
-                    entry["debug"]["z_try"] = "annual_forecast"
-                    z_raw, z_calib = compute_z_rte_like(d, c_net, daily_data, window_days=365, return_debug=True)
-                    entry["debug"]["z_calibration"] = z_calib
+                    if ENABLE_DEBUG and entry["debug"] is not None:
+                        entry["debug"]["z_try"] = "annual_forecast"
+                        z_raw, z_calib = compute_z_rte_like(
+                            d, c_net, daily_data, window_days=365, return_debug=True
+                        )
+                        entry["debug"]["z_calibration"] = z_calib
+                    else:
+                        z_raw = compute_z_rte_like(
+                            d, c_net, daily_data, window_days=365, return_debug=False
+                        )
                     z_source = "annual_forecast"
                 else:
-                    entry["debug"]["z_try"] = "fallback_std_no_daily_data"
+                    if ENABLE_DEBUG and entry["debug"] is not None:
+                        entry["debug"]["z_try"] = "fallback_std_no_daily_data"
                     z_raw = compute_z(c_net)
                     z_source = "fallback_std"
             except Exception as e:
-                entry["debug"]["z_error"] = repr(e)
-                entry["debug"]["z_error_type"] = type(e).__name__
+                if ENABLE_DEBUG and entry["debug"] is not None:
+                    entry["debug"]["z_error"] = repr(e)
+                    entry["debug"]["z_error_type"] = type(e).__name__
                 z_raw = compute_z(c_net)
                 z_source = "fallback_std"
 
-            # Filtre des Z complètement fous : on retombe sur l'ancien Z
-            if z_raw is None or abs(z_raw) > 10:
-                if entry["debug"]["z_error"] is None:
-                    entry["debug"]["z_error"] = "Z_out_of_range_or_None"
-                    entry["debug"]["z_error_type"] = "ZFilter"
-                z_raw = compute_z(c_net)
-                z_source = "fallback_std"
 
-            entry["z_raw"] = z_raw
             entry["z"] = z_raw
             entry["z_source"] = z_source
+            entry["z_raw"] = z_raw
 
         days.append(entry)
 
-    # -------------------------
-    # Calcul final couleur + confiance
-    # -------------------------
     result = {}
 
     for entry in days:
@@ -1793,20 +2033,24 @@ def build_forecast(real_j1=REAL_J1):
         conso = entry.get("conso")
         gen_val = entry.get("gen")
         gen_source = entry.get("gen_source")
+        meteo_bias = 0.0  # toujours défini
 
-        # Données manquantes → case vide
-        if conso is None or "z" not in entry or "c_net" not in entry:
+        # Snapshot stocks AVANT calcul du jour
+        red0, white0, blue0 = red_rem, white_rem, blue_rem
+
+        if conso is None:
             result[label] = {
                 "date": d.isoformat(),
                 "couleur": "inconnue",
                 "modele": None,
-                "c_mw": conso if conso is not None else None,
+                "c_mw": None,
                 "gen_mw": round(gen_val, 1) if gen_val is not None else None,
                 "gen_source": gen_source,
                 "c_net_mw": None,
                 "z": None,
                 "red_remaining": red_rem,
                 "white_remaining": white_rem,
+                "blue_remaining": blue_rem,
                 "p_bleu": None,
                 "p_blanc": None,
                 "p_rouge": None,
@@ -1814,41 +2058,59 @@ def build_forecast(real_j1=REAL_J1):
                 "confidence_label": "Indisponible",
                 "confidence_comment": "Indice de confiance indisponible (données manquantes).",
                 "z_source": entry.get("z_source"),
-                # =========================
-                # DEBUG (3) : retour attributs
-                # =========================
-                "z_debug": entry.get("debug"),
+                "T_nat": entry.get("T_nat"),
+                "T_norm": entry.get("T_norm"),
+                "delta_T": entry.get("delta_T"),
+                "meteo_bias": 0.0,
+                "z_raw": round(entry.get("z_raw"), 3) if entry.get("z_raw") is not None else None,
+                **({"z_debug": entry.get("debug")} if ENABLE_DEBUG else {}),
             }
             continue
 
-        # Données complètes
+
         c_net = entry["c_net"]
         z = entry["z"]
         j = day_index(d)
 
-        # --- Appel du modèle AVEC WRAPPER ---
-        couleur_modele, red_rem, white_rem, blue_rem, p_bleu, p_blanc, p_rouge = decide_color_with_wrappers(
-            d, z, j, red_rem, white_rem, blue_rem
+        # 1) modèle de base (SANS décrément stocks)
+        couleur_modele, p_bleu, p_blanc, p_rouge = decide_color_with_wrappers_no_stock(
+            d, z, j, red0, white0, blue0
         )
         couleur = couleur_modele
 
-        # ---------------------------------------------------------
-        # OVERRIDE J+1 AVEC COULEUR RÉELLE RTE (uniquement après 06:45)
-        # ---------------------------------------------------------
-        now_time = dt.datetime.now().time()
-        if (
-            offset == 1
-            and real_j1 in ("bleu", "blanc", "rouge")
-            and now_time >= dt.time(6, 45)
-        ):
-            if couleur_modele == "rouge":
-                red_rem += 1
-            elif couleur_modele == "blanc":
-                white_rem += 1
-            else:
-                blue_rem += 1
+        # 2) shrink / mask (peut changer couleur, mais pas stocks)
+        if offset == 2:
+            p_bleu, p_blanc, p_rouge = shrink_probs(p_bleu, p_blanc, p_rouge, 0.20)
+            p_bleu, p_blanc, p_rouge = mask_probs_by_calendar(d, p_bleu, p_blanc, p_rouge)
+            couleur = base_decision_from_probs(p_bleu, p_blanc, p_rouge)
+        elif offset == 3:
+            p_bleu, p_blanc, p_rouge = shrink_probs(p_bleu, p_blanc, p_rouge, 0.35)
+            p_bleu, p_blanc, p_rouge = mask_probs_by_calendar(d, p_bleu, p_blanc, p_rouge)
+            couleur = base_decision_from_probs(p_bleu, p_blanc, p_rouge)
+        elif offset in (4, 5, 6):
+            base_lam = {4: 0.40, 5: 0.50, 6: 0.60}[offset]
+            extra = 0.10 if gen_source in ("carryover_last_known", "estime_ratio_J+1") else 0.0
+            lam = min(0.75, base_lam + extra)
+            p_bleu, p_blanc, p_rouge = shrink_probs(p_bleu, p_blanc, p_rouge, lam)
+            p_bleu, p_blanc, p_rouge = mask_probs_by_calendar(d, p_bleu, p_blanc, p_rouge)
+            couleur = base_decision_from_probs(p_bleu, p_blanc, p_rouge)
 
+        # 3) météo (peut changer couleur)
+        delta_T = entry.get("delta_T")
+        p_bleu, p_blanc, p_rouge, meteo_bias = apply_meteo_shift_probs(p_bleu, p_blanc, p_rouge, delta_T)
+        p_bleu, p_blanc, p_rouge = mask_probs_by_calendar(d, p_bleu, p_blanc, p_rouge)
+        couleur = base_decision_from_probs(p_bleu, p_blanc, p_rouge)
+
+        # 4) override J+1 après 06:45
+        now_time = dt.datetime.now().time()
+        if offset == 1 and real_j1 in ("bleu", "blanc", "rouge") and now_time >= dt.time(6, 45):
             couleur = real_j1
+            p_bleu = 1.0 if couleur == "bleu" else 0.0
+            p_blanc = 1.0 if couleur == "blanc" else 0.0
+            p_rouge = 1.0 if couleur == "rouge" else 0.0
+
+            # Décrément stocks UNE FOIS avec la couleur finale
+            red_rem, white_rem, blue_rem = red0, white0, blue0
             if couleur == "rouge":
                 red_rem = max(0, red_rem - 1)
             elif couleur == "blanc":
@@ -1867,31 +2129,38 @@ def build_forecast(real_j1=REAL_J1):
                 "z": round(z, 3),
                 "red_remaining": red_rem,
                 "white_remaining": white_rem,
-                "p_bleu": 1.0 if couleur == "bleu" else 0.0,
-                "p_blanc": 1.0 if couleur == "blanc" else 0.0,
-                "p_rouge": 1.0 if couleur == "rouge" else 0.0,
+                "blue_remaining": blue_rem,
+                "p_bleu": p_bleu,
+                "p_blanc": p_blanc,
+                "p_rouge": p_rouge,
                 "confidence_score": 5,
                 "confidence_label": "Très forte",
                 "confidence_comment": "Couleur J+1 confirmée par RTE.",
                 "z_source": entry.get("z_source"),
-                # =========================
-                # DEBUG (3) : retour attributs
-                # =========================
-                "z_debug": entry.get("debug"),
+                "T_nat": entry.get("T_nat"),
+                "T_norm": entry.get("T_norm"),
+                "delta_T": entry.get("delta_T"),
+                "meteo_bias": meteo_bias,
+                "z_raw": round(entry.get("z_raw"), 3) if entry.get("z_raw") is not None else None,
+                **({"z_debug": entry.get("debug")} if ENABLE_DEBUG else {}),
             }
             continue
 
-        # -------------------------
-        # Score & confiance
-        # -------------------------
+        # Décrément stocks UNE FOIS avec la couleur finale
+        red_rem, white_rem, blue_rem = red0, white0, blue0
+        if couleur == "rouge":
+            red_rem = max(0, red_rem - 1)
+        elif couleur == "blanc":
+            white_rem = max(0, white_rem - 1)
+        else:
+            blue_rem = max(0, blue_rem - 1)
+
+        # Score confiance (inchangé chez toi)
         score = _compute_confidence_score(
-            couleur, p_bleu, p_blanc, p_rouge, red_rem, white_rem, offset
+            couleur, p_bleu, p_blanc, p_rouge, red_rem, white_rem, offset, gen_source
         )
-       
         conf_label = _confidence_label(score)
-        conf_comment = _build_confidence_comment(
-            couleur, p_bleu, p_blanc, p_rouge, score, offset
-        )
+        conf_comment = _build_confidence_comment(couleur, p_bleu, p_blanc, p_rouge, score, offset)
 
         result[label] = {
             "date": d.isoformat(),
@@ -1904,6 +2173,7 @@ def build_forecast(real_j1=REAL_J1):
             "z": round(z, 3),
             "red_remaining": red_rem,
             "white_remaining": white_rem,
+            "blue_remaining": blue_rem,
             "p_bleu": round(p_bleu, 3),
             "p_blanc": round(p_blanc, 3),
             "p_rouge": round(p_rouge, 3),
@@ -1911,33 +2181,24 @@ def build_forecast(real_j1=REAL_J1):
             "confidence_label": conf_label,
             "confidence_comment": conf_comment,
             "z_source": entry.get("z_source"),
-            # =========================
-            # DEBUG (3) : retour attributs
-            # =========================
-            "z_debug": entry.get("debug"),
+            "T_nat": entry.get("T_nat"),
+            "T_norm": entry.get("T_norm"),
+            "delta_T": entry.get("delta_T"),
+            "meteo_bias": meteo_bias,
+            "z_raw": round(entry.get("z_raw"), 3) if entry.get("z_raw") is not None else None,
+            **({"z_debug": entry.get("debug")} if ENABLE_DEBUG else {}),
         }
 
     return result
 
 
-
-
 if __name__ == "__main__":
     try:
         data = build_forecast()
-        wrapper = {
-            "generated_at": dt.datetime.now().isoformat(),
-            **data,
-        }
+        wrapper = {"generated_at": dt.datetime.now().isoformat(), **data}
         print(json.dumps(wrapper))
     except Exception as e:
-        # Log technique sur stderr
         print("ERROR in build_forecast:", repr(e), file=sys.stderr)
-        err = {
-            "error": str(e),
-            "generated_at": dt.datetime.now().isoformat(),
-        }
+        err = {"error": str(e), "generated_at": dt.datetime.now().isoformat()}
         print(json.dumps(err))
         sys.exit(0)
-
-
