@@ -7,6 +7,7 @@ command_line:
         {{ states('sensor.rte_tempo_cycle_jours_restants_blanc') }}
         {{ states('sensor.rte_tempo_cycle_jours_restants_bleu') }}
         {{ states('sensor.rte_tempo_prochaine_couleur') }}
+      scan_interval: 86400
       json_attributes:
         - J+1
         - J+2
@@ -303,19 +304,6 @@ template:
             {{ (j.p_rouge|float(0) * 100)|round(1) }}
           {% endif %}
 
-  - sensor:
-      - name: tempo_indice_tension_j6
-        unit_of_measurement: "%"
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+6') %}
-          {% if not j %}
-            0
-          {% else %}
-            {% set pb = j.p_bleu|float(0) %}
-            {% set pw = j.p_blanc|float(0) %}
-            {% set pr = j.p_rouge|float(0) %}
-            {{ (pr * 100 + pw * 50)|round(0) }}
-          {% endif %}
 
   - sensor:
       - name: "Tempo indice tension J+1"
@@ -375,6 +363,19 @@ template:
             unknown
           {% endif %}
         unit_of_measurement: "Z"
+
+  - sensor:
+      - name: "Tempo indice tension J+6"
+        unique_id: tempo_indice_tension_j6
+        state: >
+          {% set j = state_attr('sensor.tempo_prevision_simple', 'J+6') %}
+          {% if j %}
+            {{ j['z'] | float(0) | round(2) }}
+          {% else %}
+            unknown
+          {% endif %}
+        unit_of_measurement: "Z"
+
 
   - sensor:
       - name: "Tempo niveau tension J+1"
@@ -518,7 +519,6 @@ template:
               violet
             {% endif %}
           {% endif %}
-
 
 
           
@@ -720,3 +720,4 @@ template:
           {% else %}
             ""
           {% endif %}
+
