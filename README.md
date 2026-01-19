@@ -1,6 +1,8 @@
 # Météo Tempo (Home Assistant) — Prévision J+1 à J+6 via API RTE
 
-Ce projet fournit une “météo Tempo” (bleu / blanc / rouge) pour **J+1 à J+6**, exploitable dans **Home Assistant**, en s’appuyant sur les **API officielles RTE** (prévisions de consommation / production et prévisions annuelles).
+Ce projet fournit une “météo Tempo” (bleu / blanc / rouge) pour **J+1 à J+6**, exploitable dans **Home Assistant**, en s’appuyant sur les **API officielles RTE** (prévisions de consommation / production et prévisions annuelles). 
+ 
+ Depuis la V1.2.0, une **option** (par défaut activée) permet d'affiner les prévision selon l'écart des températures moyennes du jour (indice thermique national).
 
  ⚠️ Il s’agit d’une estimation probabiliste, pas d’une certitude. Comme pour la météo, le modèle évalue des risques (probabilités),
       et non une vérité absolue. Ce projet ne fournit donc **pas une prédiction certaine** des jours Tempo (bleu / blanc / rouge).
@@ -9,10 +11,9 @@ Ce projet fournit une “météo Tempo” (bleu / blanc / rouge) pour **J+1 à J
 
 > L'objectif est d'aider les potentiels utilisateurs de ce modèle à anticiper les postes de consommation pour les journées où les tarifs sont les plus élevés.
 
-> Les prévisions peuvent changer en cours de journée, celles-ci sont **mises à jour en permanence !**
-
+> Les prévisions peuvent changer en cours de journée, celles-ci sont **mises à jour plusieurs fois dans la journée** via une automatisation ciblée, ou un scan_interval adapté.
 > Ce projet est purement personnel et est partagé à titre d'exemple pour ceux qui veulent simplement l'essayer, le personnaliser ou le modifier à leur guise. 
-> Il n'a pour le moment aucune vocation à être maintenu ou déployé à grande échelle.
+> Il n'a pour le moment aucune vocation à être déployé à grande échelle.
 
 
 ---
@@ -33,6 +34,8 @@ Ce projet fournit une “météo Tempo” (bleu / blanc / rouge) pour **J+1 à J
   - saisonnalité (rouge uniquement sur période autorisée)
   - prise en compte du stock de jours restants (rouge/blanc/bleu)
 - Mode “override” : possibilité d’imposer la couleur réelle J+1 (quand elle est connue), tout en gardant la cohérence des stocks
+- **NEW (v1.2+) :** ajout d’une option **météo** (activée par défaut) : ajustement probabiliste léger via l’écart thermique national (Open-Meteo).
+     [`Plus d'infos`](https://github.com/stef72cam/Meteo_Tempo_HA/releases/tag/v1.2.0)
 
 ---
 
@@ -60,7 +63,7 @@ Ce projet fournit une “météo Tempo” (bleu / blanc / rouge) pour **J+1 à J
 
 3) Ajouter les **template sensors** pour exposer facilement :
 - la couleur J+1..J+6
-- les probas
+- les probabilités
 - le niveau de tension (Z + palette vert/jaune/orange/rouge/violet)
 - le score et commentaire de confiance
 
@@ -70,12 +73,16 @@ Ce projet fournit une “météo Tempo” (bleu / blanc / rouge) pour **J+1 à J
 
  
 4) Ajouter une automatisation pour effectuer la mise à jour régulière des valeurs
-    - Possibilité de ne pas en faire mais d'ajouter à la place un scan_interval au capteur command_line tempo_prevision_simple
+    - Possibilité de ne pas en faire mais de modifier le temps de refresh (scan_interval) au capteur command_line tempo_prevision_simple.
+    -  **Ne pas faire de refresh trop fréquemment si vous utilisez l'option "météo"** (au plus bas, 1 refresh toutes les 2H).
+    -  Au delà du fait qu'il n'y a aucune utilité à faire appel aux API de RTE trop fréquemement, vous risquez de ne plus avoir de retour de l'API open-meteo. (Error : "Too many requests").
+         - Je vous conseille de laisser le scan_interval par défaut (24h) et d'utiliser une automatisation pour mettre à jour.
+         
 
     - **Exemple d'automatisation prête à copier/coller et utilisée** [`examples/Maj_previsions`](examples/Maj_previsions) 
-       - Effectue les mises à jour aux moments de la journée où RTE publie les données qui nous intéressent avec nouvelle tentative en cas de non réponse de l'API
+       - Effectue les mises à jour aux moments de la journée où RTE publie les données qui nous intéressent avec nouvelle tentative en cas de non réponse de l'API RTE.
          
-6) Ajouter l'affichage dans son tableau de bord Home assistant
+5) Ajouter l'affichage dans son tableau de bord Home assistant
 
    Exemple complet : [`examples/Affichage_lovelace`](examples/Affichage_Lovelace)
 ---
@@ -111,7 +118,7 @@ Chaque `J+N` contient notamment :
 - `z` : indice tension (calculé via prévisions annuelles RTE sur 365 jours glissants)
 - `p_bleu / p_blanc / p_rouge` : probabilités
 - `confidence_score / label / comment` : confiance (1..5)
-- `z_debug` : bloc debug optionnel (diagnostic du calcul de Z)
+- `z_debug` : bloc debug optionnel (diagnostic du calcul de Z + infos de l'API Open-Meteo)
 
  Détails de la sortie Json : [`docs/sortie_json.md`](docs/sortie_json.md)
  
@@ -131,21 +138,23 @@ Chaque `J+N` contient notamment :
 - Le projet est personnel et développé par passion pour la domotique.
 - La logique fonctionnelle et les choix de modélisation sont les miens.
 - La création du code a été assisté par des outils d’IA, ce qui peut entraîner des choix non optimaux d’un point de vue purement informatique.
-- Ce projet est partagé librement afin que d’autres puissent en bénéficier, sans prétention à l’exhaustivité ni à l’infaillibilité.
+- Ce projet est partagé librement, à un but **NON-COMMERCIAL** afin que d’autres puissent en bénéficier, sans prétention à l’exhaustivité ni à l’infaillibilité.
 
 ---
 
 ## Sources
 
 Pour mener ce projet au stade fonctionnel tel qu'il est aujourd'hui, j'ai réalisé différents backtests sur les 10 années précédentes.
-Les sources sur lesquelles je me suis basé pour faire mes tests et faire fonctionner ce modèle sont : 
+Les sources et données sur lesquelles je me suis basé pour faire mes tests et faire fonctionner ce modèle sont : 
 
  - https://www.rte-france.com/donnees-publications/eco2mix-donnees-temps-reel/synthese-donnees
  - https://www.rte-france.com/donnees-publications/eco2mix-donnees-temps-reel/telecharger-indicateurs
  - https://www.services-rte.com/files/live/sites/services-rte/files/pdf/20160106_Methode_de_choix_des_jours_Tempo.pdf
  - https://data.rte-france.com/catalog/-/api/doc/user-guide/Generation+Forecast/3.0
  - https://data.rte-france.com/catalog/-/api/doc/user-guide/Consumption/1.2
- -  L'observation réelle du modèle VS journée seléctionnée par RTE
+ - https://www.infoclimat.fr/climato/indicateur_national.php?indicateur=edf#2026;,1981-2010,1,-3.65,368.65,,y,desc,-1292556060000,1797560460000
+ - https://open-meteo.com/ (utilisation NON-COMMERCIALE)
+ - L'observation réelle du modèle VS journée seléctionnée par RTE, puis réadaptations
 ---
 
 ## Evolutions possibles
