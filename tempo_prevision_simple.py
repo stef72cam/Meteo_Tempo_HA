@@ -514,7 +514,7 @@ def red_floor_from_z(z: float) -> float:
     if z < 1:
         return 0.00
     if z < 1.10:
-        return 0.08
+        return 0.10
     if z < 1.20:
         return 0.12
     if z < 1.25:
@@ -1024,7 +1024,7 @@ def decide_color_with_probs(d, z, j, red_rem, white_rem, blue_rem):
 
     elif coeur_hiver_local:
         if delta_pressure > 0.03:
-            edf_red_factor *= 1.20
+            edf_red_factor *= 1.25
         elif delta_pressure < -0.03:
             edf_red_factor *= 0.80
 
