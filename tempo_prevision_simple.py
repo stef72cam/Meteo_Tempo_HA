@@ -100,40 +100,27 @@ def http_get_json(url, token, params=None):
 
 def get_annual(token):
     """
-    Récupère les prévisions annuelles.
-
-    - Du 01/01 au 30/11 : appel sans paramètres.
-    - Décembre : concat N + N+1.
-    - Janvier : concat N-1 + N.
+    Toujours concaténer (année N-1) + (année N)
+    pour garantir un historique utilisable en début d'année.
     """
     today = dt.date.today()
-    tz = dt.timezone(dt.timedelta(hours=1))  # Europe/Paris hiver
+    tz = dt.timezone(dt.timedelta(hours=1))  # ok en hiver; sinon tu peux passer en UTC
 
     def _fetch_year(year: int):
         start_dt = dt.datetime(year, 1, 1, 0, 0, 0, tzinfo=tz)
-        end_dt = dt.datetime(year + 1, 1, 1, 0, 0, 0, tzinfo=tz)
+        end_dt   = dt.datetime(year + 1, 1, 1, 0, 0, 0, tzinfo=tz)
         params = {"start_date": start_dt.isoformat(), "end_date": end_dt.isoformat()}
         return http_get_json(CONS_ANNUAL_URL, token, params)
 
-    if today.month == 12:
-        y = today.year
-        a = _fetch_year(y)
-        b = _fetch_year(y + 1)
-        forecasts = []
-        forecasts += a.get("annual_forecasts", []) if isinstance(a, dict) else []
-        forecasts += b.get("annual_forecasts", []) if isinstance(b, dict) else []
-        return {"annual_forecasts": forecasts}
+    y = today.year
+    a = _fetch_year(y - 1)
+    b = _fetch_year(y)
 
-    if today.month == 1:
-        y = today.year
-        a = _fetch_year(y - 1)
-        b = _fetch_year(y)
-        forecasts = []
-        forecasts += a.get("annual_forecasts", []) if isinstance(a, dict) else []
-        forecasts += b.get("annual_forecasts", []) if isinstance(b, dict) else []
-        return {"annual_forecasts": forecasts}
+    forecasts = []
+    forecasts += a.get("annual_forecasts", []) if isinstance(a, dict) else []
+    forecasts += b.get("annual_forecasts", []) if isinstance(b, dict) else []
+    return {"annual_forecasts": forecasts}
 
-    return http_get_json(CONS_ANNUAL_URL, token)
 
 
 def _quantile(values, p: float) -> float:
