@@ -1871,6 +1871,85 @@ def _build_confidence_comment(couleur, p_bleu, p_blanc, p_rouge, score, offset):
     else:
         return f"Couleurs très proches, modèle hésitant."
 
+def apply_terminal_red_deadline_pressure(d, p_bleu: float, p_blanc: float, p_rouge: float, red_rem: int):
+    """
+    Pression terminale rouge liée à la date limite du 31/03.
+
+    Idée :
+    - si tous les jours éligibles restants doivent être rouges -> 100% rouge
+    - s'il ne reste qu'un seul "joker" non rouge -> rouge quasi certain
+    - sinon on ne touche à rien
+
+    Cette fonction doit être appelée EN DERNIER,
+    après shrink + météo + mask calendrier.
+    """
+    if red_rem <= 0:
+        return p_bleu, p_blanc, p_rouge, None
+
+    if not allowed("rouge", d):
+        return p_bleu, p_blanc, p_rouge, None
+
+    _, red_end = red_season_bounds(d)
+    eligible_left = count_red_eligible_days_left(d, red_end)
+
+    if eligible_left <= 0:
+        return p_bleu, p_blanc, p_rouge, {
+            "eligible_left": 0,
+            "red_rem": red_rem,
+            "slack": None,
+            "applied": "none_no_eligible_days"
+        }
+
+    # Nombre de jours non rouges encore "autorisés"
+    slack = eligible_left - red_rem
+
+    # Cas 1 : tous les jours restants doivent être rouges
+    if slack <= 0:
+        return 0.0, 0.0, 1.0, {
+            "eligible_left": eligible_left,
+            "red_rem": red_rem,
+            "slack": slack,
+            "applied": "force_100_red"
+        }
+
+    # Cas 2 : un seul joker non rouge
+    if slack == 1:
+        target_r = 0.96
+    # Cas 3 : deux jokers non rouges -> forte pression mais pas quasi-certaine
+    elif slack == 2:
+        target_r = 0.88
+    else:
+        return p_bleu, p_blanc, p_rouge, {
+            "eligible_left": eligible_left,
+            "red_rem": red_rem,
+            "slack": slack,
+            "applied": "none"
+        }
+
+    # On impose un plancher rouge terminal
+    if p_rouge < target_r:
+        non_red = p_bleu + p_blanc
+        if non_red <= 0:
+            p_bleu, p_blanc, p_rouge = 0.0, 0.0, 1.0
+        else:
+            add = target_r - p_rouge
+            p_bleu -= add * (p_bleu / non_red)
+            p_blanc -= add * (p_blanc / non_red)
+            p_rouge += add
+
+    s = p_bleu + p_blanc + p_rouge
+    if s > 0:
+        p_bleu /= s
+        p_blanc /= s
+        p_rouge /= s
+
+    return p_bleu, p_blanc, p_rouge, {
+        "eligible_left": eligible_left,
+        "red_rem": red_rem,
+        "slack": slack,
+        "target_r": target_r,
+        "applied": "red_floor"
+    }
 
 def build_forecast(real_j1=REAL_J1):
     token = get_token()
@@ -1901,8 +1980,6 @@ def build_forecast(real_j1=REAL_J1):
     else:
         tnat_map = {}
         meteo_error = "meteo_disabled_manual"
-
-
 
     red_rem = RED_REMAINING
     white_rem = WHITE_REMAINING
@@ -1955,7 +2032,7 @@ def build_forecast(real_j1=REAL_J1):
             "T_nat": T_nat,
             "T_norm": T_norm,
             "delta_T": delta_T,
-            "meteo_bias": 0.0,  # sera mis à jour plus tard si appliqué
+            "meteo_bias": 0.0,
         }
 
         if ENABLE_DEBUG:
@@ -1971,8 +2048,6 @@ def build_forecast(real_j1=REAL_J1):
                 "z_error_type": None,
                 "meteo_error": meteo_error,
             }
-
-
 
         if conso is not None:
             c_net = conso - gen_val if gen_val is not None else conso
@@ -2003,7 +2078,6 @@ def build_forecast(real_j1=REAL_J1):
                 z_raw = compute_z(c_net)
                 z_source = "fallback_std"
 
-
             entry["z"] = z_raw
             entry["z_source"] = z_source
             entry["z_raw"] = z_raw
@@ -2020,7 +2094,8 @@ def build_forecast(real_j1=REAL_J1):
         conso = entry.get("conso")
         gen_val = entry.get("gen")
         gen_source = entry.get("gen_source")
-        meteo_bias = 0.0  # toujours défini
+        meteo_bias = 0.0
+        red_deadline_debug = None
 
         # Snapshot stocks AVANT calcul du jour
         red0, white0, blue0 = red_rem, white_rem, blue_rem
@@ -2049,11 +2124,11 @@ def build_forecast(real_j1=REAL_J1):
                 "T_norm": entry.get("T_norm"),
                 "delta_T": entry.get("delta_T"),
                 "meteo_bias": 0.0,
+                "red_deadline_pressure": red_deadline_debug,
                 "z_raw": round(entry.get("z_raw"), 3) if entry.get("z_raw") is not None else None,
                 **({"z_debug": entry.get("debug")} if ENABLE_DEBUG else {}),
             }
             continue
-
 
         c_net = entry["c_net"]
         z = entry["z"]
@@ -2084,8 +2159,17 @@ def build_forecast(real_j1=REAL_J1):
 
         # 3) météo (peut changer couleur)
         delta_T = entry.get("delta_T")
-        p_bleu, p_blanc, p_rouge, meteo_bias = apply_meteo_shift_probs(p_bleu, p_blanc, p_rouge, delta_T)
+        p_bleu, p_blanc, p_rouge, meteo_bias = apply_meteo_shift_probs(
+            p_bleu, p_blanc, p_rouge, delta_T
+        )
         p_bleu, p_blanc, p_rouge = mask_probs_by_calendar(d, p_bleu, p_blanc, p_rouge)
+
+        # 3 bis) pression terminale rouge liée à la deadline 31/03
+        p_bleu, p_blanc, p_rouge, red_deadline_debug = apply_terminal_red_deadline_pressure(
+            d, p_bleu, p_blanc, p_rouge, red0
+        )
+        p_bleu, p_blanc, p_rouge = mask_probs_by_calendar(d, p_bleu, p_blanc, p_rouge)
+
         couleur = base_decision_from_probs(p_bleu, p_blanc, p_rouge)
 
         # 4) override J+1 après 06:45
@@ -2128,6 +2212,7 @@ def build_forecast(real_j1=REAL_J1):
                 "T_norm": entry.get("T_norm"),
                 "delta_T": entry.get("delta_T"),
                 "meteo_bias": meteo_bias,
+                "red_deadline_pressure": red_deadline_debug,
                 "z_raw": round(entry.get("z_raw"), 3) if entry.get("z_raw") is not None else None,
                 **({"z_debug": entry.get("debug")} if ENABLE_DEBUG else {}),
             }
@@ -2142,7 +2227,7 @@ def build_forecast(real_j1=REAL_J1):
         else:
             blue_rem = max(0, blue_rem - 1)
 
-        # Score confiance (inchangé chez toi)
+        # Score confiance
         score = _compute_confidence_score(
             couleur, p_bleu, p_blanc, p_rouge, red_rem, white_rem, offset, gen_source
         )
@@ -2172,6 +2257,7 @@ def build_forecast(real_j1=REAL_J1):
             "T_norm": entry.get("T_norm"),
             "delta_T": entry.get("delta_T"),
             "meteo_bias": meteo_bias,
+            "red_deadline_pressure": red_deadline_debug,
             "z_raw": round(entry.get("z_raw"), 3) if entry.get("z_raw") is not None else None,
             **({"z_debug": entry.get("debug")} if ENABLE_DEBUG else {}),
         }
