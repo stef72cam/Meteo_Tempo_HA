@@ -1,357 +1,132 @@
-# Tempo Prévision Simple
+# Fonctionnement de Météo Tempo — V2.1.0
 
-Outil de prévision **probabiliste** des jours **Tempo EDF (Bleu / Blanc / Rouge)**  
-basé sur les **données RTE**, un **Z-score de tension du système électrique**,  
-et un ensemble de **règles métier explicites, maîtrisées et explicables**.
+[Retour au README](../README.md) · [Format JSON](sortie_json.md)
 
-L’objectif est d’anticiper les couleurs Tempo **48 à 72 heures à l’avance**,  
-avec une **fiabilité croissante à l’approche du jour J**, tout en restant :
-- transparent,
-- stable,
-- compréhensible,
-- ajustable.
+## 1. Architecture
 
----
+Il ne s'agit pas d'un apprentissage automatique. Le programme combine des prévisions physiques, des contraintes calendaires et des règles probabilistes explicites. RTE publie les seuils, mais le programme ne dispose pas des prévisions internes exactes qui seront utilisées lors de la décision future.
 
-## Fonctionnement général
+```mermaid
+flowchart TD
+    A[Consommation RTE court terme et semaine] --> D[Consommation résiduelle horaire]
+    B[Production nationale RTE] --> C[Profil ENR horaire]
+    M[Open-Meteo et profil RTE de secours] --> C
+    C --> D
+    D --> E[Pointe 00h-24h]
+    D --> F[Moyenne 06h-06h]
+    E --> G[Matrices Bellman et signaux PP]
+    F --> H[Modèle blanc conditionnel]
+    S[Stocks et calendrier Tempo] --> G
+    S --> H
+    G --> I[Scénarios probabilistes de stock]
+    H --> I
+    O[Couleurs officielles Tempo] --> I
+    I --> J[JSON J+1 à J+6 et Home Assistant]
+```
 
-Le modèle calcule, pour chaque jour J+1 à J+6 :
-- une probabilité **Bleu / Blanc / Rouge**
-- une couleur dominante
-- un score de confiance (1 à 5)
-- un commentaire explicatif
+## 2. Acquisition et alignement des données
 
-Il ne s’agit **pas** d’un modèle d’apprentissage automatique,  
-mais d’un **système déterministe** fondé sur :
-- des indicateurs physiques (consommation, production),
-- des règles Tempo connues,
-- une logique probabiliste progressive,
--  **un ajustement météorologique optionnel basé sur l’écart thermique national**.
+Les appels RTE utilisent OAuth. Les endpoints réellement utilisés sont :
 
----
+| API | Endpoint sous `/open_api/` | Usage |
+|---|---|---|
+| Consumption | `consumption/v1/short_term` | Consommation à court terme |
+| Consumption | `consumption/v1/weekly_forecasts` | Prévisions de semaine |
+| Consumption | `consumption/v1/annual_forecasts` | Référence de normalisation des blancs |
+| Generation Forecast | `generation_forecast/v3/forecasts` | Production nationale, types D-1,D-2,D-3 |
+| Tempo Like Supply Contract | `tempo_like_supply_contract/v1/tempo_like_calendars` | Calendrier officiel et stock |
+| Signal V2 | `signal/v2/signals` | Historique et annonces PP |
 
-## Sources de données
+La granularité interne de récupération est le quart d'heure, avec agrégation par heure. À horodatage identique, le court terme prime sur la semaine. Les horodatages futurs de publication sont écartés. Le traitement en UTC et les bornes civiles `Europe/Paris` permettent de distinguer les heures répétées au changement d'heure.
 
-### RTE (Open Data)
-- Consommation nationale prévisionnelle (MW)
-- Prévisions de production ENR (éolien / solaire)
-- Données journalières et multi-jours
+La consommation résiduelle est calculée heure par heure :
 
-### EDF Tempo
-- Couleur officielle J+1 (override)
-- Nombre de jours restants par couleur (bleu / blanc / rouge)
+`C_res(h) = C(h) - E_onshore(h) - E_offshore(h) - PV(h)`.
 
-### Météo (indice thermique national)
-- Température moyenne journalière nationale
-- Normales saisonnières associées
-- Données issues de [`Open Meteo`](https://open-meteo.com/)(utilisation non commerciale)
-- Utilisées uniquement comme **biais probabiliste faible et borné**
+Le maximum horaire de cette série sur la journée civile sert au PP ; la moyenne de 06h à 06h du lendemain sert de base au blanc. En l'absence de fenêtre complète 06h–06h, le moteur utilise la moyenne civile lorsqu'elle est disponible. Le calcul nécessite des séries complètes pour la pointe et la moyenne civile ; une heure manquante ne devient pas un zéro fictif. La production et la consommation journalières affichées en MW sont des moyennes de puissance, pas des énergies en MWh.
 
----
+## 3. Le nouveau modèle des rouges
 
-## Indicateur clé : le Z-score
+### Les matrices officielles
 
-Le **Z-score** représente la tension du système électrique français  
-par rapport à une référence annuelle.
+À partir de l'hiver 2026–2027, la sélection des rouges Tempo suit le mécanisme PP dans les conditions décrites par RTE. Le programme charge les deux CSV de la période, dans son propre répertoire. Il ne recalcule pas l'équation de Bellman utilisée par RTE : il exploite les seuils publiés.
 
-| Z-score | Interprétation |
-|-------|----------------|
-| Z < 0.6 | Système confortable |
-| 0.6 ≤ Z < 1.0 | Tension modérée |
-| 1.0 ≤ Z < 1.3 | Zone de vigilance |
-| 1.3 ≤ Z < 1.6 | Forte tension |
-| Z ≥ 1.6 | Tension critique |
+Chaque ligne des matrices contient `date`, `stockEpuise` (nombre de PP déjà consommés), `seuilBellman` (MW), `reason`. Un seuil positif fini est une valeur de comparaison ; `Infinity` bloque le tirage et `0` le force. Le chargeur vérifie dates, doublons, complétude de la matrice et cohérence du motif. Une matrice manquante ou invalide n'est pas remplacée par une matrice d'une autre année.
 
-Les transitions sont **progressives** :  
-aucun seuil ne provoque de basculement brutal.
+Les plages cumulées publiées pour 2026–2027 sont :
 
----
-## Ajustement météorologique (v1.2)
+| Fin de mois | Minimum | Guide | Maximum |
+|---|---:|---:|---:|
+| Novembre | 0 | 1 | 3 |
+| Décembre | 6 | 6 | 6 |
+| Janvier | 13 | 16 | 19 |
+| Février | 20 | 21 | 22 |
+| Mars | 22 | 22 | 22 |
 
-À partir de la version 1.2, le modèle intègre un **biais météorologique optionnel**, basé sur l’écart entre la température nationale observée et les normales saisonnières.
+Ces nombres sont cumulés, pas des quotas mensuels indépendants. Le rappel vers le guide et les minima sont intégrés dans les matrices ; le code contrôle en plus les maxima et les réservations liées aux signaux PP futurs connus. Dans le code actuel, les jours PP éligibles sont les jours ouvrés de novembre à mars, hors jours fériés retenus et 24/31 décembre. Le dimanche est bleu dans le modèle, indépendamment de la tension (sous réserve d'une annonce officielle contradictoire).
 
-Ce biais :
-- **n’influence jamais directement le Z-score**
-- n’écrase aucune probabilité existante
-- agit uniquement comme un **affineur probabiliste**
+### Du seuil à la probabilité
 
-### Principe général
+La pointe `P` est comparée au seuil `S` pour chaque scénario de stock. Le franchissement strict `P > S` est un diagnostic instantané. Pour anticiper la décision à venir, le modèle utilise une approximation gaussienne :
 
-Le biais météo repose sur un **transfert progressif des probabilités**, avec la couleur **blanc** comme zone tampon :
+`p_PP = 0,5 × erfc((S - P) / (sigma × sqrt(2)))`.
 
-- Temps plus doux que la normale :
-  - Rouge → Blanc → Bleu
-- Temps plus froid que la normale :
-  - Bleu → Blanc → Rouge
+L'écart type `sigma` est le maximum de 1 000 MW et de la pointe multipliée par le coefficient de l'horizon. Les coefficients J+1 à J+6 sont respectivement 2 %, 3,5 %, 5 %, 7,5 %, 9 % et 10,5 %. Lorsque les ENR ne viennent pas intégralement de RTE, 4 000 MW supplémentaires sont combinés quadratiquement. Ces valeurs sont des hypothèses, pas des erreurs mesurées. J-1 sert à la probabilité principale ; J-2 sert à un indicateur anticipé facultatif à J+2, et non à une seconde probabilité rouge à additionner.
 
-Aucun transfert direct Bleu ↔ Rouge n’est autorisé.
+### Signaux PP et couleurs officielles
 
-### Intensité du biais
+Le calendrier Tempo publié prime sur toutes les estimations. La couleur du lendemain fournie par HA peut compléter le calendrier après 10h30 si celui-ci ne l'a pas encore renseignée. Un signal PP publié est pris en compte avant la couleur officielle. Un signal tardif (mise à jour à partir de 10h30 J-1, traitement spécifique de la période transitoire jusqu'à novembre 2027 dans le code) n'est pas assimilé automatiquement à un rouge confirmé. Le modèle ne prédit pas indépendamment les événements EcoWatt exceptionnels.
 
-L’intensité dépend de l’écart thermique absolu (`|delta_T|`) :
+L'absence de signal ne signifie pas NON_PP. Le stock PP est suivi séparément du stock Tempo lorsqu'un historique PP complet est disponible ; sinon, le stock rouge Tempo sert de proxy, avec avertissement.
 
-- < 0.5°C : aucun effet
-- 0.5 à 1.5°C : biais très faible
-- 1.5 à 3°C : biais modéré
-- > 3°C : biais maximal (borné)
+## 4. Scénarios de stock
 
-La quantité déplacée reste volontairement faible afin de :
-- préserver la hiérarchie issue du Z-score
-- éviter tout emballement artificiel
+La saison Tempo démarre le 1er septembre, avec 22 rouges, 43 blancs et le solde de jours bleus (300 ou 301 selon la durée de la saison). Le script réconcilie les stocks HA avec le calendrier complet lorsqu'il est disponible et tente de corriger les décalages d'un jour. Le stock initial représente la fin d'aujourd'hui, avant affectation de demain.
 
-### Objectif
+Pour chaque journée, le moteur conserve une distribution d'états `(PP consommés, rouges restants, blancs restants, bleus restants)` et propage la masse probabiliste vers les états du lendemain. Les états identiques sont regroupés. La somme des probabilités par couleur est arrondie à 1,000 quand les trois valeurs sont disponibles.
 
-- Réduire les faux positifs rouges en conditions très douces
-- Réduire les faux positifs bleus en conditions très froides
-- Améliorer la cohérence dans les zones d’hésitation (probabilités proches)
-  
----
+Exemple illustratif : un seuil mardi de 68,2 GW si lundi n'est pas PP, ou 70,7 GW si lundi l'est. Les deux scénarios contribuent au risque de mardi selon leurs poids. Ce n'est pas simplement la couleur favorite du lundi qui est retenue. Si des données manquent, des hypothèses internes de propagation (50 % pour une branche inconnue) permettent de continuer, mais les probabilités non justifiables sont masquées et le stock est marqué incertain. Ces poids de secours ne constituent pas des prévisions validées.
 
-## Horizon de prévision et fiabilité
+`red_remaining`, `white_remaining`, `blue_remaining` sont des compteurs de présentation décrémentés selon la couleur favorite ; ils ne décrivent pas toute la distribution. `expected_remaining` est l'espérance des stocks après le jour considéré ; `pp_thresholds` fournit les scénarios avant la décision. Plusieurs entrées peuvent partager le même seuil car les stocks blancs et bleus diffèrent.
 
-| Horizon | Données principales | Fiabilité |
-|------|--------------------|----------|
-| J+1 | RTE + couleur EDF officielle | Très forte |
-| J+2 | RTE complètes | Forte |
-| J+3 | RTE partiel / estimation | Moyenne |
-| J+4 à J+6 | Carryover ENR | Faible |
+## 5. Production renouvelable : nouveau modèle météo
 
-À partir de **J+4**, les données ENR détaillées ne sont plus disponibles côté RTE.  
-Le modèle conserve la **dernière valeur connue**, ce qui est explicitement signalé.
+RTE reste la source prioritaire. Les séries nationales éolien terrestre, offshore et solaire sont retenues ; les séries CPC/MDSE ne sont pas assimilées à la production nationale. Un ancien format `WIND` non ventilé peut être accepté en l'absence des deux séries éoliennes séparées ; dans ce cas, le mélange météo par filière n'est pas possible.
 
----
+### Estimation horaire
 
-## Gestion du passage d’année
+Le modèle Open-Meteo est activé par `ENABLE_ENR_METEO`. Il utilise 20 points terrestres et 6 points maritimes. Les capacités de référence du code sont 24 500 MW terrestres, 2 300 MW offshore et 34 300 MW photovoltaïques, approximations continentales des statistiques SDES T3 2026. Les poids régionaux sont des proxys normalisés, et non des capacités vérifiées de parcs individuels.
 
-Le comportement dépend de la période :
+- Éolien : vent à 100 m en m/s, courbe générique de puissance cubique entre 3 et 12 m/s, plateau au-delà et arrêt à 25 m/s. Facteurs globaux de 0,86 à terre et 0,90 en mer. Moyenne des puissances calculées aux deux extrémités de l'heure.
+- Solaire : rayonnement global horizontal (`shortwave_radiation`), moyenne de l'heure précédente, coefficient global 0,80 et plafonnement à la capacité. L'orientation, les pertes et l'autoconsommation sont approchées, pas simulées site par site.
+- Données horaires en UTC, sélection des cellules terre/mer séparée ; une couverture spatiale incomplète n'est pas extrapolée arbitrairement pour la filière manquante.
 
-- **Du 01/01 au 30/11**
-  - appel RTE sans paramètres (comportement par défaut)
+### Ordre de priorité
 
-- **Du 01/12 au 31/12**
-  - encadrement explicite :
-    - start_date = 01/01 N
-    - end_date = 01/01 N+1 (exclusive côté RTE)
+1. Heure complète RTE nationale ; sinon, assemblage de chaque composante RTE disponible et de la composante météo manquante.
+2. Si l'heure nationale reste incomplète, moyenne des profils horaires complets RTE disponibles dans la réponse (jusqu'à trois profils récents, huit jours maximum). Un jour estimé n'est jamais recyclé comme profil RTE officiel.
+3. Si aucune solution ne fournit une série complète, les valeurs dépendantes restent manquantes.
 
-- **Du 31/12 au 05/01**
-  - encadrement maintenu pour éviter :
-    - ruptures statistiques,
-    - Z-score aberrant,
-    - fallback intempestif
+Ce secours n'est pas un cache persistant : en cas de panne de RTE, le script ne relit pas les réponses de l'exécution précédente. Le modèle météo ne remplace pas les prévisions de **consommation** manquantes.
 
-Ce mécanisme garantit une continuité correcte autour du Nouvel An.
+## 6. Modèle des blancs et des bleus
 
----
+Le modèle blanc est conditionnel à l'absence de rouge. Il utilise le Z calculé à partir de la moyenne nette Tempo, les stocks, la date de saison et des contraintes de fin de cycle. Le Z ne décide plus directement des rouges.
 
-## Règles structurelles Tempo
+- Si au moins 30 valeurs de référence existent sur la fenêtre des 365 jours précédents, le code applique `(net - Q40) / (Q80 - Q40)` sur les données annuelles RTE reconstruites à partir de moyennes hebdomadaires.
+- À défaut, `fallback_std` utilise `(net - 46050) / 2160`. Cette référence n'est pas calibrée sur la nouvelle méthode ; même la référence annuelle compare des données de nature différente (consommation brute de référence et consommation nette cible). Les anciennes catégories d'interprétation du Z ne sont donc pas garanties.
+- La fonction logistique utilise un seuil inspiré de la méthode historique : `4 - 0,015*j - 0,026*(rouges + blancs) - 0,30`. Le dernier décalage, la pente et la dilution à longue échéance sont des choix propres au projet.
+- `ENABLE_METEO` active un ajustement thermique distinct du modèle ENR. La température nationale pondérée est comparée aux normales disponibles dans le code ; le biais de 0 à 0,09 est appliqué au blanc conditionnel (signe selon le froid ou la douceur, puis bornage). Les mois non couverts n'ont pas de normale renseignée.
+- `ENABLE_WHITE_BELLMAN` active un bonus expérimental de blanc quand la pointe approche un seuil PP fini (à partir de 85 %), pondéré par le Z et l'horizon. Il ne modifie pas directement la probabilité de rouge. Les seuils PP ne sont pas des seuils officiels de blanc.
 
-### Jours interdits / imposés
-- **Dimanche** : bleu certain
-- **Samedi** :
-  - jamais rouge
-  - plafonnement des extrêmes
-  - renormalisation systématique
-- Respect strict des jours restants par couleur
+Pour une branche non rouge, `p_blanc = (1 - p_rouge) × p_blanc_conditionnel` et le bleu reçoit le complément. La disponibilité des stocks et les dimanches imposent des contraintes supplémentaires. Les probabilités finales sont agrégées sur les scénarios.
 
-### Saisons, stocks et gestion de l’avance/retard
+## 7. Confiance, diagnostics et limites
 
-Le modèle intègre désormais une logique explicite de **calendrier Tempo réel** et de **gestion de stock**.
+Le score 1–5 part de la probabilité maximale, puis peut diminuer avec l'horizon (J+4 et suivants), l'estimation ENR ou l'incertitude des stocks. Les contraintes déterministes et annonces officielles ont un traitement spécifique. Le score n'est ni un taux de réussite ni une mesure validée de calibration. La carte enrichit les commentaires (duel, risque rouge, etc.) sans modifier le calcul.
 
-#### Année Tempo (01/09 → 31/08)
-Le modèle raisonne en **année Tempo**, pas en année civile :
-- Début : **01/09**
-- Fin : **31/08** (inclusive)
+`diagnostics.warnings` signale les échecs d'API, les problèmes de matrices et de stocks. Le code continue en cas d'échec partiel ; une erreur fatale est renvoyée dans `error`. La disponibilité de J+1 ne garantit pas J+6.
 
-Cela permet de compter correctement l’avancement et d’éviter les incohérences autour de septembre/octobre.
+## 8. Évaluer et améliorer
 
-#### Saison rouge (01/11 → 31/03 inclusive)
-Les rouges sont strictement limités à la période contractuelle :
-- **01/11 → 31/03** (inclus)
-- jamais de rouge hors saison, même si la tension (Z) est élevée
-
-#### Courbe cible d’utilisation des rouges (alignée sur l’historique)
-Le modèle utilise une “courbe cible” indiquant combien de rouges devraient être consommés à une date donnée,
-pour éviter les rouges trop tôt tout en garantissant **100% des rouges au 31/03**.
-
-Repères utilisés :
-- **10/12 : 5%**
-- **31/01 : 65%**
-- **20/02 : 95%**
-- **31/03 : 100%**
-
-#### Détection avance / retard sur les rouges
-Le modèle compare :
-- rouges déjà utilisés,
-- fraction cible à la date (courbe ci-dessus),
-- nombre de jours encore **éligibles** au rouge (jours ouvrés, non fériés, dans la saison rouge).
-
-Cette comparaison influence directement la probabilité rouge :
-- en avance : rouge calmé (moins de faux positifs)
-- en retard : rouge autorisé plus facilement (pour éviter d’être obligé de “vider en panique”)
-
----
-
-### Jours interdits / imposés
-- **Dimanche** : bleu certain
-- **Samedi** :
-  - jamais rouge
-  - plafonnement des extrêmes
-  - renormalisation systématique
-- Respect strict des jours restants par couleur
-
----
-
-## Dynamique rouge 
-
-Le rouge est encadré par une logique combinant :
-- tension réseau (Z-score),
-- saison rouge (01/11 → 31/03),
-- gestion des stocks (avance/retard via la courbe cible).
-
-### Plancher rouge dynamique (anti faux positifs)
-Un **plancher rouge dépendant de Z** est utilisé :
-- Z faible → pas de plancher (on évite de “forcer” du rouge)
-- Z tendu → un minimum de présence rouge est garanti
-
-Objectif :
-- calmer les faux positifs rouge quand Z est seulement “moyen”
-- garder une vraie présence rouge quand la tension devient significative
-
-### Fenêtre de boost et réglages
-Les boosts ne sont pas brutaux, pour le rouge :
-- utilisation d’une **fenêtre plus courte** pour limiter l’effet “rouge automatique”
-- ajustement des coefficients (plancher + pente) pour un rouge plus cohérent et plus progressif
-
----
-
-## Ajustement des probabilités non-rouges
-
-Quand la probabilité rouge doit monter, le modèle réalloue depuis blanc/bleu de manière :
-- **proportionnelle**
-- **renormalisée**
-- sans écrasement arbitraire
-
-Le modèle utilise :
-- un **plancher rouge dynamique** (fonction de Z) pour éviter les faux positifs,
-- et des réglages limitant les montées rouge trop agressives.
-- en ce qui concerne d'autres réglages, différents patchs ont étés insérés dans la définition de la couleur pour coller à la réalité observée et ainsi fiabiliser le modèle.
-
-Objectif :
-- éviter un rouge artificiellement dominant,
-- conserver des duels réalistes (blanc/rouge) en zone limite.
-
----
-
-## Désactivation de l’aide au bleu
-
-En cœur d’hiver :
-- dès que `Z ≥ 0.62`
-- toute aide structurelle au bleu est désactivée
-
-Objectif :
-- éviter des scénarios incohérents du type :
-  > Bleu dominant avec Z élevé en janvier
-
----
-
-## Score de confiance
-
-Le score (1 à 5) dépend de :
-- l’écart entre les probabilités dominantes
-- la distance temporelle (proche / moyen / lointain)
-- la stabilité des données ENR
-- la cohérence avec les règles Tempo
-  
-  - L’ajustement météorologique n’augmente jamais artificiellement le score de confiance.
-    Il peut au contraire maintenir une confiance basse lorsque les scénarios restent ouverts.
-
-### Dégradation volontaire
-À partir de **J+4** :
-- la confiance est abaissée d’un cran
-- le commentaire précise la fiabilité réduite
-- aucune certitude artificielle n’est affichée
-
----
-
-## Commentaires explicatifs
-
-Les commentaires sont générés dynamiquement selon :
-- duel bleu/blanc
-- risque rouge en embuscade
-- domination claire
-- horizon temporel
-
-Exemples :
-- `Jour proche, rouge nettement devant.`
-- `Duel bleu/blanc très serré, prévision sensible.`
-- `Jour lointain, beaucoup d’incertitude.`
-
----
-
-## Limitations connues
-
-### 1. Données ENR absentes à long terme
-À partir de J+4 :
-- production ENR extrapolée
-- fiabilité réduite
-- confiance volontairement abaissée
-
----
-### 2. Abscence de données à court terme pour J+2
-RTE publie les données du lendemain dans la nuit. Ainsi les données "J+2" sont manquantes entre 00h30 et 02h00 du matin environs. Il ne s'agit pas d'un bug mais d'une limitation technique liée à la publication des données sur l'API. Les statistiques sont à nouveaux disponibles à la prochaine mise à jour, aux alentours de 3H du matin.
-
----
-
-### 3. Zones blanc / rouge ou bleu / blanc ambiguës
-Quand :
-- Z autour de la zone de bascule entre deux couleurs
-- stocks encore confortables
-- météo froide mais stable
-
-RTE peut arbitrer différemment du modèle qui marquera une incertitude.
-
----
-
-### 4. Décisions RTE non modélisables
-Le modèle ne connaît pas :
-- contraintes internes EDF/RTE
-- arbitrages commerciaux
-- décisions tardives
-
-Ces choix sont **par nature imprévisibles**.
-**Il est donc impossible de prédire une journée rouge si RTE vide les stocks** (obligatoire contractuellement entre le 01/11 et le 31/03) **mais que la tension du réseau est faible** (exemple en mars 2024 où la tension sur le réseau était faible et donc normalement bleue, mais pour vider les stocks, cette journée fut rouge). La probabilité existera, mais elle ne sera pas en tête, sans que cela ne soit un dysfonctionnement.
-
-**Ceci est valable également pour une journée blanche**. Toujours pour une question de gestion des stocks, il est possible que d’après les indicateurs de tension du réseau, tout signale rouge mais que L’algorithme de RTE en décide autrement. Malheureusement dans la documentation disponible sur le net, rien n’est précisé sur comment sont gérés ces stocks. Uniquement sur des seuils de déclenchement rouge/blanc, et dans ce cas, l'erreur est quasi-inévitable.
-
----
-
-### 5. Aucun apprentissage automatique
-Choix volontaire :
-- modèle déterministe
-- explicable
-- maîtrisable
-- ajustable manuellement
-
-### 6. Météo non déterminante
-L’ajustement météo :
-- ne peut pas inverser une situation de tension forte
-- n’est pas utilisé pour créer des certitudes
-- ne modifie jamais la valeur de Z
-
-Il agit uniquement comme un correcteur de cohérence statistique afin de limiter au maximum possible les limites du point 4 ci-dessus.
-
-
----
-
-## Philosophie du projet
-
-Ce projet privilégie :
-- la cohérence de données brutes
-- l’explicabilité
-- la stabilité
-- la fiabilité, autant que possible
-
-Il ne cherche pas à “deviner” ce que fera RTE,  mais à **comprendre le système électrique** et ses contraintes pour déterminer des probabilités.
-
----
-
+La priorité est d'archiver chaque prévision avec son horodatage, son horizon, ses sources et la version du modèle, puis de la comparer à la couleur publiée et à la production ENR observée (par filière, en MW). Ne pas mélanger des prévisions émises après publication officielle avec de véritables prévisions. Pour les ENR, mesurer biais et MAE/RMSE horaires ; pour les couleurs, Brier score multiclasses et courbes de fiabilité par horizon, avec attention à la rareté des rouges. Comparer à des modèles de référence sur les mêmes dates. Aucun mécanisme automatique d'apprentissage ou d'archivage n'est implémenté dans la V2.1.0.
