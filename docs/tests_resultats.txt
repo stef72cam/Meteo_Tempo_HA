@@ -1,0 +1,47 @@
+test_args (test_tempo_v2.V2.test_args) ... ok
+test_build_calendar_end (test_tempo_v2.V2.test_build_calendar_end) ... ok
+test_build_mock_network (test_tempo_v2.V2.test_build_mock_network) ... ok
+test_december_normal (test_tempo_v2.V2.test_december_normal) ... ok
+test_dst (test_tempo_v2.V2.test_dst) ... ok
+test_forced_and_blocked (test_tempo_v2.V2.test_forced_and_blocked) ... ok
+test_full_season_tunnel (test_tempo_v2.V2.test_full_season_tunnel) ... ok
+test_generation_profile (test_tempo_v2.V2.test_generation_profile) ... ok
+test_hourly_alignment_no_double_count (test_tempo_v2.V2.test_hourly_alignment_no_double_count) ... ok
+test_json_serialization (test_tempo_v2.V2.test_json_serialization) ... ok
+test_late_pp (test_tempo_v2.V2.test_late_pp) ... ok
+test_matrices (test_tempo_v2.V2.test_matrices) ... ok
+test_missing_matrices (test_tempo_v2.V2.test_missing_matrices) ... ok
+test_morning_rte_profile_from_today (test_tempo_v2.V2.test_morning_rte_profile_from_today) ... ok
+test_non_pp_missing_conso (test_tempo_v2.V2.test_non_pp_missing_conso) ... ok
+test_normal (test_tempo_v2.V2.test_normal) ... ok
+test_official_beats_white_bonus (test_tempo_v2.V2.test_official_beats_white_bonus) ... ok
+test_official_without_data (test_tempo_v2.V2.test_official_without_data) ... ok
+test_outside_season (test_tempo_v2.V2.test_outside_season) ... ok
+test_pp_status (test_tempo_v2.V2.test_pp_status) ... ok
+test_pp_stock_divergence (test_tempo_v2.V2.test_pp_stock_divergence) ... ok
+test_rollover (test_tempo_v2.V2.test_rollover) ... ok
+test_stock_already_planned (test_tempo_v2.V2.test_stock_already_planned) ... ok
+test_stock_history (test_tempo_v2.V2.test_stock_history) ... ok
+test_stock_limit_and_reservation (test_tempo_v2.V2.test_stock_limit_and_reservation) ... ok
+test_tempo_calendar_request (test_tempo_v2.V2.test_tempo_calendar_request) ... ok
+test_tempo_window_and_calendar_peak (test_tempo_v2.V2.test_tempo_window_and_calendar_peak) ... ok
+test_white_apurement (test_tempo_v2.V2.test_white_apurement) ... ok
+test_white_bellman_bonus_bounds (test_tempo_v2.V2.test_white_bellman_bonus_bounds) ... ok
+test_white_bonus_preserves_red_all_horizons (test_tempo_v2.V2.test_white_bonus_preserves_red_all_horizons) ... ok
+test_white_when_red_cap (test_tempo_v2.V2.test_white_when_red_cap) ... ok
+test_api_failure (test_enr.Weather.test_api_failure) ... ok
+test_api_params (test_enr.Weather.test_api_params) ... ok
+test_curve (test_enr.Weather.test_curve) ... ok
+test_dst_weather_utc (test_enr.Weather.test_dst_weather_utc) ... ok
+test_incomplete_spatial (test_enr.Weather.test_incomplete_spatial) ... ok
+test_no_fake_zero (test_enr.Weather.test_no_fake_zero) ... ok
+test_radiation_interval_end_and_units (test_enr.Weather.test_radiation_interval_end_and_units) ... ok
+test_rte_priority_component (test_enr.Weather.test_rte_priority_component) ... ok
+test_rte_priority_full (test_enr.Weather.test_rte_priority_full) ... ok
+test_weather_fallback_mix (test_enr.Weather.test_weather_fallback_mix) ... ok
+test_weather_variation_without_rte (test_enr.Weather.test_weather_variation_without_rte) ... ok
+
+----------------------------------------------------------------------
+Ran 42 tests in 0.929s
+
+OK
