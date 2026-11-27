@@ -1,178 +1,119 @@
-# Météo Tempo (Home Assistant) — Prévision J+1 à J+6 via API RTE
+# Météo Tempo (Home Assistant) — Prévision J+1 à J+6
 
-Ce projet fournit une “météo Tempo” (bleu / blanc / rouge) pour **J+1 à J+6**, exploitable dans **Home Assistant**, en s’appuyant sur les **API officielles RTE** (prévisions de consommation / production et prévisions annuelles). 
- 
- Depuis la V1.2.0, une **option** (par défaut activée) permet d'affiner les prévision selon l'écart des températures moyennes du jour (indice thermique national).
+Projet personnel de prévision des couleurs Tempo (bleu, blanc, rouge), conçu pour aider à anticiper les consommations électriques et à adapter les automatisations de Home Assistant.
 
- ⚠️ Il s’agit d’une estimation probabiliste, pas d’une certitude. Comme pour la météo, le modèle évalue des risques (probabilités),
-      et non une vérité absolue. Ce projet ne fournit donc **pas une prédiction certaine** des jours Tempo (bleu / blanc / rouge).
-  -  Ce n’est pas la vérité officielle EDF/RTE : c’est une **prévision**, avec des erreurs possibles basée sur des indicateurs publics (RTE) et des règles inspirées de l’historique EDF.
-  -  La couleur **officielle** n’est connue que lorsque RTE la publie, la veille pour le lendemain.
+**Version 2.1.0 — novembre 2026**
 
-> L'objectif est d'aider les potentiels utilisateurs de ce modèle à anticiper les postes de consommation pour les journées où les tarifs sont les plus élevés.
+> ⚠️ Ce projet ne remplace pas l'annonce officielle Tempo. Il fournit des estimations probabilistes, susceptibles d'évoluer au fil des publications RTE et de la météo. Le modèle V2 est en cours d'évaluation en conditions réelles ; ses probabilités ne sont pas encore calibrées statistiquement.
 
-> Les prévisions peuvent changer en cours de journée, celles-ci sont **mises à jour plusieurs fois dans la journée** via une automatisation ciblée, ou un scan_interval adapté.
-> Ce projet est purement personnel et est partagé à titre d'exemple pour ceux qui veulent simplement l'essayer, le personnaliser ou le modifier à leur guise. 
-> Il n'a pour le moment aucune vocation à être déployé à grande échelle.
+## Pourquoi une V2 ?
 
+À partir de novembre 2026, la méthode de sélection des jours rouges Tempo s'appuie sur celle des jours de période de pointe (PP) du mécanisme de capacité. La V1, fondée principalement sur un indice de consommation nette normalisée, devait donc évoluer.
 
----
-
-<img width="1797" height="872" alt="image" src="https://github.com/user-attachments/assets/3c0b8a7a-c6ec-4f31-8abe-d85d7b465884" />
-
-
+La V2 exploite les seuils de décision Bellman publiés par RTE, les signaux PP et les prévisions de consommation résiduelle. Elle conserve un modèle distinct, expérimental, pour les jours blancs et bleus. La V2.1 ajoute une estimation météorologique horaire de la production renouvelable française lorsque les données nationales RTE ne sont pas disponibles.
 
 ## Fonctionnalités
 
-- Prévision **Tempo J+1 → J+6** : `bleu`, `blanc`, `rouge`
-- Probabilités associées : `p_bleu`, `p_blanc`, `p_rouge`
-- Indice de “tension réseau” : `z` (calibré sur une fenêtre glissante d’un an)
-- Score de confiance (1 → 5) + libellé + commentaire d'aide à la compréhension
-- Des pastilles de couleur indiquant la tension sur le réseau
-- Respect des règles Tempo :
-  - rouge interdit week-end / fériés
-  - saisonnalité (rouge uniquement sur période autorisée)
-  - prise en compte du stock de jours restants (rouge/blanc/bleu)
-- Mode “override” : possibilité d’imposer la couleur réelle J+1 (quand elle est connue), tout en gardant la cohérence des stocks
-- **NEW (v1.2+) :** ajout d’une option **météo** (activée par défaut) : ajustement probabiliste léger via l’écart thermique national (Open-Meteo).
-     [`Plus d'infos`](https://github.com/stef72cam/Meteo_Tempo_HA/releases/tag/v1.2.0)
+- Prévisions J+1 à J+6, couleur favorite et probabilités bleu/blanc/rouge.
+- Prise en compte des matrices PP J-1 et J-2, des contraintes calendaires et des stocks.
+- Propagation de plusieurs scénarios de stock : un jour rouge potentiel modifie les seuils des jours suivants.
+- Priorité à la couleur officielle Tempo lorsqu'elle est connue ; intégration des signaux PP (avec prudence pour les signaux tardifs).
+- Production éolienne terrestre, offshore et photovoltaïque : données RTE prioritaires, estimation Open-Meteo sur 26 zones, puis profil RTE antérieur en secours.
+- Score de confiance indicatif de 1 à 5, diagnostics de qualité et provenance des données.
+- Carte Lovelace avec barres de probabilités et mini-jauges des seuils PP. Le Z reste interne au modèle blanc, mais n'est plus affiché.
 
----
+## Comment lire la carte ?
 
-## Pré-requis
+![Carte Lovelace avec les prévisions Tempo à six jours et les jauges des seuils PP](apercu-lovelace.png)
 
-- Home Assistant OS / Supervised / Container
-- `python3` disponible dans l’environnement HA
-- Avoir un compte DATA RTE : data.rte-france.com
-- Créer un projet dans "Mes applications" et associer les API : Tempo Like Supply Contract / Consumption / Generation Forecast
-- Accès API RTE (Client ID / Client Secret)
-- Avoir installé et configuré l'intégration "RTE Tempo" depuis HACS et ne pas modifier le nom des entités par défaut (surtout pour le nombre de jours restants)
-- Des capteurs HA fournissant le stock Tempo (rouge/blanc/bleu restants) et éventuellement la couleur officielle J+1 --> fournis directement dans "configuration.yaml" dans les exemples
-- Si utilisation tel quel avec affichage comme dans l'exemple, il faut avoir "bar-card" d'installé via le dépot HACS + Button-card
+La barre orange représente la pointe horaire de consommation résiduelle prévue. Les traits rouges sont les seuils Bellman J-1 possibles. Plusieurs traits correspondent à plusieurs hypothèses de jours PP consommés auparavant.
 
----
+Exemple : une pointe de 65,5 GW face à un seuil de 68,7 GW représente environ 95 % du seuil. **Ce rapport n'est pas une probabilité de rouge.** Le moteur prend aussi en compte les incertitudes et les scénarios de stock. Les étoiles représentent un indice heuristique de confiance, pas une garantie de réussite.
+
+## Prérequis
+
+- Home Assistant avec l'intégration `command_line`, Python 3.9+ (module `zoneinfo`, données de fuseaux horaires `Europe/Paris`) et accès HTTPS sortant depuis l'environnement qui exécute la commande. Aucun paquet Python tiers n'est requis.
+- Compte [DATA RTE](https://data.rte-france.com/), application OAuth avec Client ID et Client Secret, et souscription aux API **Consumption**, **Generation Forecast**, **Tempo Like Supply Contract** et **Signal V2**.
+- Intégration RTE Tempo (HACS), ou capteurs équivalents fournissant les trois stocks et la couleur du lendemain. Les identifiants de l'exemple correspondent aux entités utilisées sur mon installation.
+- Pour la carte d'exemple : `bar-card` et `button-card` installés dans Home Assistant.
+- Accès à Open-Meteo pour les deux options météo activées par défaut ; respecter les [conditions d'utilisation](https://open-meteo.com/en/terms) du service gratuit, réservé à l'usage non commercial.
+- Matrices PP de la période de livraison en cours, à télécharger sur le portail RTE (voir ci-dessous).
 
 ## Installation
 
-1) Copier le script à la racine de Home Assistant :
-- `config/tempo_prevision_simple.py`
-  - Penser à renseigner les champs **Client_ID** et **Secret_ID**
+### 1. Installer le script et les matrices
 
-2) Ajouter un **sensor command_line** dans le fichier de configuration de Home Assistant qui exécute le script et expose le JSON en attributs.
+Copier `tempo_prevision_simple.py` à la racine de `/config` de Home Assistant. Dans le script local uniquement, renseigner `CLIENT_ID` et `CLIENT_SECRET` à la place des valeurs `REMPLIR ICI`. Le script accepte également les variables d'environnement `RTE_CLIENT_ID` et `RTE_CLIENT_SECRET` lorsqu'elles sont accessibles à son processus. **Ne jamais publier les identifiants personnels sur GitHub.**
 
+Sur le [portail RTE — Paramètres et acteurs](https://www.services-rte.com/fr/visualisez-les-donnees-publiees-par-rte/parametres-et-acteurs), rubrique « Seuils de décision de tirage des jours PP », récupérer les deux CSV officiels de la période concernée. Pour l'hiver 2026–2027 :
 
-3) Ajouter les **template sensors** pour exposer facilement :
-- la couleur J+1..J+6
-- les probabilités
-- le niveau de tension (Z + palette vert/jaune/orange/rouge/violet)
-- le score et commentaire de confiance
+```text
+/config/
+├── tempo_prevision_simple.py
+├── tableauseuils_pp_2627_j-1.csv
+└── tableauseuils_pp_2627_j-2.csv
+```
 
-   **Exemple complet à copier coller et prêt à être utilisé dans votre fichier configuration.yaml** : [`examples/configuration.yaml`](examples/configuration.yaml)
-    - Attention: si les sections templates et command_line existent déjà dans votre fichier, il suffit de placer les sensors en dessous de ceux existants, sans faire de doublon de section.
-    - Penser à redémarrer Home Assistant après avoir ajouté le fichier tempo_prevision_simple.py et créé tous les sensors !
+Les matrices doivent être dans le même répertoire que le script, avec leur nom et leur structure d'origine. Renouveler les deux fichiers à chaque nouvelle période PP (par exemple `2728` pour 2027–2028). Ne pas réutiliser les seuils d'un hiver précédent. Les CSV ne sont pas inclus dans ce paquet de publication : télécharger la version officielle actualisée.
 
- 
-4) Ajouter une automatisation pour effectuer la mise à jour régulière des valeurs
-    - Possibilité de ne pas en faire mais de modifier le temps de refresh (scan_interval) au capteur command_line tempo_prevision_simple.
-    -  **Ne pas faire de refresh trop fréquemment si vous utilisez l'option "météo"** (au plus bas, 1 refresh toutes les 2H).
-    -  Au delà du fait qu'il n'y a aucune utilité à faire appel aux API de RTE trop fréquemement, vous risquez de ne plus avoir de retour de l'API open-meteo. (Error : "Too many requests").
-         - Je vous conseille de laisser le scan_interval par défaut (24h) et d'utiliser une automatisation pour mettre à jour.
-         
+### 2. Configurer les capteurs
 
-    - **Exemple d'automatisation prête à copier/coller et utilisée** [`examples/Maj_previsions`](examples/Maj_previsions) 
-       - Effectue les mises à jour aux moments de la journée où RTE publie les données qui nous intéressent avec nouvelle tentative en cas de non réponse de l'API RTE.
-         
-5) Ajouter l'affichage dans son tableau de bord Home assistant
+Utiliser [examples/configuration.yaml](examples/configuration.yaml). Fusionner `command_line:` et `template:` avec les sections existantes : ne pas dupliquer les clés ni les capteurs. Remplacer les anciennes définitions Tempo par les nouvelles, tout en conservant les autres équipements et automatisations.
 
-   Exemple complet : [`examples/Affichage_lovelace`](examples/Affichage_Lovelace)
----
+Le script attend, dans cet ordre : rouges restants, blancs restants, bleus restants, couleur officielle J+1 (facultative). Les trois premiers arguments doivent être des entiers valides. Vérifier les identifiants des entités dans Outils de développement → États.
 
-## Capteurs Home Assistant (architecture)
+Valider la configuration, puis recharger Command Line et les entités de modèle (ou redémarrer HA si le rechargement n'est pas disponible). Pour Command Line, Outils de développement → Actions :
 
-### `sensor.tempo_prevision_simple` (command_line)
-C’est **le capteur principal**.
-- Il exécute le script python
-- Il renvoie un JSON
-- HA stocke ce JSON en **attributs** (`J+1`, …, `J+6`, `generated_at`, etc.)
-- Son `state` est volontairement fixe (`ok`) : l’intérêt est dans les **attributs**
+```yaml
+action: command_line.reload
+data: {}
+```
 
-### Template sensors (extraction)
-Les template sensors servent à :
-- rendre les données exploitables dans Lovelace (bar-card, badges, automations)
-- isoler des entités simples (`tempo_j1_couleur`, `tempo_j2_p_rouge`, etc.)
-- éviter de manipuler des structures JSON complexes partout
+### 3. Actualiser les prévisions
 
----
+Par défaut, `scan_interval: 7200` lance un calcul toutes les deux heures. C'est la configuration simple recommandée. L'[exemple d'automatisation](examples/Maj_previsions) propose une alternative ciblée sur les publications RTE : dans ce cas, passer `scan_interval` à `86400` et désactiver les anciennes automatisations de mise à jour pour éviter les appels redondants. Tester `homeassistant.update_entity` sur le capteur avant d'utiliser cette alternative ; sur certaines installations, le rechargement Command Line est nécessaire pour forcer un calcul manuel.
 
-## Format de sortie JSON (résumé)
+Éviter les rafraîchissements en boucle : une interrogation multi-zones Open-Meteo peut être comptabilisée comme plusieurs appels. Le service gratuit ne garantit pas sa disponibilité.
 
-Chaque `J+N` contient notamment :
+### 4. Installer la carte
 
-- `date` : la date cible
-- `couleur` : couleur retenue par le modèle
-- `modele` : `modele_interne` ou `override_RTE`
-- `c_mw` : consommation prévue (MW)
-- `gen_mw` : production ENR estimée (MW)
-- `gen_source` : source ENR (`RTE`, `estime_ratio_J+1`, `carryover_last_known`)
-- `c_net_mw` : consommation nette = conso - ENR
-- `z` : indice tension (calculé via prévisions annuelles RTE sur 365 jours glissants)
-- `p_bleu / p_blanc / p_rouge` : probabilités
-- `confidence_score / label / comment` : confiance (1..5)
-- `z_debug` : bloc debug optionnel (diagnostic du calcul de Z + infos de l'API Open-Meteo)
+Dans le tableau de bord, ajouter ou modifier une carte en mode YAML et coller [examples/Affichage_Lovelace](examples/Affichage_Lovelace). Les 18 capteurs de probabilités doivent être disponibles. La carte lit directement le JSON pour le reste. Aucun chemin de navigation personnel n'est imposé dans cet exemple ; ajuster librement le nombre de colonnes selon votre écran.
 
- Détails de la sortie Json : [`docs/sortie_json.md`](docs/sortie_json.md)
- 
- Détails du fonctionnement : [`docs/fonctionnement.md`](docs/fonctionnement.md)
+### 5. Vérifier le premier calcul
 
----
+Outils de développement → Modèle :
 
-## Disclaimer
+```jinja
+{{ states.sensor.tempo_prevision_simple.attributes | to_json(pretty_print=True) }}
+```
 
-- Le modèle ne remplace pas les annonces officielles Tempo.
-- Les prévisions reposent sur des données externes (RTE) qui peuvent évoluer.
-- Les résultats sont fournis “as-is”, sans garantie.
-- Le code peut- être mis à jour pour fiabiliser les probabilités obtenues par le modèle
-   - Ces fiabilisations reposent sur un ajustement du code pour affiner les réponses et limiter les grosses erreurs.
-   - Ces ajustements s'effectuent à l'aide de backtess et des observations entre les prévisions du modèle et le choix réel de RTE.
-      - Principe du Brier Score
-- Le projet est personnel et développé par passion pour la domotique.
-- La logique fonctionnelle et les choix de modélisation sont les miens.
-- La création du code a été assisté par des outils d’IA, ce qui peut entraîner des choix non optimaux d’un point de vue purement informatique.
-- Ce projet est partagé librement, à un but **NON-COMMERCIAL** afin que d’autres puissent en bénéficier, sans prétention à l’exhaustivité ni à l’infaillibilité.
+Vérifier `version: 2.1.0`, `generated_at`, `diagnostics.warnings`, les matrices chargées et les probabilités des six jours. L'état `ok` signifie qu'aucune erreur fatale n'a été renvoyée, **pas** que toutes les données sont disponibles. Une probabilité `null` doit rester indisponible, et non être transformée en 0 %.
 
----
+## Documentation
+
+- [Fonctionnement du moteur V2](docs/fonctionnement.md) : Bellman, stocks, modèle météo, blancs et limites.
+- [Format de sortie JSON](docs/sortie_json.md) : champs, unités, valeurs et qualité des données.
+- [Migration depuis la V1](docs/migration_v2.md) : changements de configuration et contrôles.
+- [Historique de version](CHANGELOG.md).
 
 ## Sources
 
-Pour mener ce projet au stade fonctionnel tel qu'il est aujourd'hui, j'ai réalisé différents backtests sur les 10 années précédentes.
-Les sources et données sur lesquelles je me suis basé pour faire mes tests et faire fonctionner ce modèle sont : 
+- RTE : [méthode de sélection PP, note du 18 novembre 2026](https://www.services-rte.com/files/live/sites/services-rte/files/methode_selection_jourspp_2026-11-18.pdf), [paramètres et seuils PP](https://www.services-rte.com/fr/visualisez-les-donnees-publiees-par-rte/parametres-et-acteurs), [signaux PP](https://www.services-rte.com/fr/visualisez-les-donnees-publiees-par-rte/signaux-pp.html), [calendrier Tempo](https://www.services-rte.com/fr/visualisez-les-donnees-publiees-par-rte/calendrier-des-offres-de-fourniture-de-type-tempo.html).
+- [Ancienne méthode Tempo](https://www.services-rte.com/files/live/sites/services-rte/files/pdf/20160106_Methode_de_choix_des_jours_Tempo.pdf) : référence historique pour le modèle blanc, pas pour la sélection PP actuelle.
+- [DATA RTE](https://data.rte-france.com/) : documentation des quatre API ; [éCO2mix](https://www.rte-france.com/donnees-publications/eco2mix-donnees-temps-reel/synthese-donnees) pour les observations.
+- [Open-Meteo](https://open-meteo.com/) : données météo ; [documentation Forecast](https://open-meteo.com/en/docs).
+- SDES : [éolien T3 2026](https://www.statistiques.developpement-durable.gouv.fr/tableau-de-bord-eolien-troisieme-trimestre-2026), [photovoltaïque T3 2026](https://www.statistiques.developpement-durable.gouv.fr/tableau-de-bord-solaire-photovoltaique-troisieme-trimestre-2026). Les poids géographiques du modèle sont des approximations, pas un inventaire officiel des parcs.
 
- - https://www.rte-france.com/donnees-publications/eco2mix-donnees-temps-reel/synthese-donnees
- - https://www.rte-france.com/donnees-publications/eco2mix-donnees-temps-reel/telecharger-indicateurs
- - https://www.services-rte.com/files/live/sites/services-rte/files/pdf/20160106_Methode_de_choix_des_jours_Tempo.pdf
- - https://data.rte-france.com/catalog/-/api/doc/user-guide/Generation+Forecast/3.0
- - https://data.rte-france.com/catalog/-/api/doc/user-guide/Consumption/1.2
- - https://www.infoclimat.fr/climato/indicateur_national.php?indicateur=edf#2026;,1981-2010,1,-3.65,368.65,,y,desc,-1292556060000,1797560460000
- - https://open-meteo.com/ (utilisation NON-COMMERCIALE)
- - L'observation réelle du modèle VS journée seléctionnée par RTE, puis réadaptations
----
+## Limites et perspectives
 
-## Evolutions possibles
+Les essais historiques effectués pour la V1 ne valident pas la V2 ni le nouveau régime PP. La V2.1 a fait l'objet de tests automatisés et d'un premier essai sur Home Assistant avec de vraies réponses API, mais il reste à mesurer ses performances hors échantillon. Aucun cache persistant ni apprentissage automatique n'est inclus à ce stade. Une API indisponible peut entraîner des prévisions manquantes. Le modèle des blancs, notamment son Z de secours, doit également être amélioré.
 
-- Le code étant entièrement en python avec un retour en json, il est parfaitement possible pour les plus expérimentés d'utiliser le modèle dans d'autres systèmes qui n'ont rien à voir avec Home Assistant.
-- Des améliorations sont apportées progressivement au modèle et testées avant d'être publiées pour tenter d'améliorer les prévisions du modèle, dans une logique de stabilité avant tout.
-    - Le coeur du modèle (logique de calcul des probabilités et structure JSON) est volontairement maintenue stable. Les évolutions portent principalement sur l'affinage de paramètres de calcul internes.
-- Si j'estime que tout est assez robuste sur du long terme en "production", avec assez d'utilisateurs et de retours, et pas seulement en backtest, un déploiement plus gobal est envisageable.
-    - Je pense notamment à tenter un dépot via HACS pour une installation simplifiée.
----
+À terme : sauvegarde des prévisions, comparaison aux productions observées, calibration par horizon (Brier score, courbes de fiabilité), gestion plus robuste des indisponibilités et éventuellement installation simplifiée via HACS si la stabilité le permet.
 
-## Vous souhaitez soutenir le projet ?
+Ce projet est indépendant de RTE et d'EDF, développé par passion pour la domotique. Les choix fonctionnels sont personnels ; le développement du code a bénéficié de l'assistance d'outils d'IA. Il est partagé sans garantie, dans un esprit non commercial, afin que chacun puisse l'essayer, l'étudier et l'améliorer. Pour les usages sensibles au prix, toujours donner la priorité à la couleur officielle.
 
-- Parlez-en autour de vous !
-- N'hésitez surtout pas à faire des tests de votre côté, bidouiller, améliorer le code et/ou le modèle !
--  **Et surtout** n'hésitez pas à me faire part de vos retours ! Toute remarque **constructive** est bonne à prendre.
--  Un simple **merci** vaut toutes les heures passées, présentes et futures à faire évoluer ce projet.
-  
-> -  Certains d'entre vous ont souhaité me remercier avec un petit pourboire, si vous le souhaitez : 
-[`Offrir un café`](https://paypal.me/Stef72cam)
- 
+## Retours et soutien
+
+Les retours d'expérience, suggestions et résultats de tests sont les bienvenus via les [issues GitHub](https://github.com/stef72cam/Meteo_Tempo_HA/issues). Préciser la version, l'heure du calcul, l'horizon, les diagnostics et la couleur observée, sans identifiants personnels.
+
+Et si vous souhaitez soutenir le projet, un merci fait toujours plaisir ! [Offrir un café](https://paypal.me/Stef72cam).

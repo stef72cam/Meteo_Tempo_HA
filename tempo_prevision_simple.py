@@ -1,2277 +1,689 @@
 #!/usr/bin/env python3
-import sys
-import json
+"""TEMPO V2 — official RTE PP thresholds, probabilistic forecast, HA-compatible JSON."""
 import base64
+import csv
 import datetime as dt
+import json
 import math
-from collections import defaultdict
-from urllib.request import Request, urlopen
+import os
+import sys
+from collections import defaultdict, Counter
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from urllib.error import HTTPError
 from urllib.parse import urlencode
-from datetime import datetime
+from urllib.request import Request, urlopen
+from zoneinfo import ZoneInfo
 
-CLIENT_ID = "REMPLIR ICI"
-CLIENT_SECRET = "REMPLIR ICI"
-ENABLE_METEO = True          #Inscrire FALSE si non utilisé
-ENABLE_DEBUG = False         #Inscrire TRUE si utilisé
+CLIENT_ID = os.getenv('RTE_CLIENT_ID', 'REMPLIR ICI')
+CLIENT_SECRET = os.getenv('RTE_CLIENT_SECRET', 'REMPLIR ICI')
+ENABLE_METEO = True
+ENABLE_ENR_METEO = True
+ENABLE_DEBUG = False
+ENABLE_WHITE_BELLMAN = True  # Experimental, affects only white/blue.
+WHITE_BELLMAN_MAX = 0.30
+WHITE_BELLMAN_START = 0.85
+PARIS = ZoneInfo('Europe/Paris')
+UTC = dt.timezone.utc
+ROOT = Path(__file__).resolve().parent
+BASE = 'https://digital.iservices.rte-france.com/'
+TOKEN_URL = BASE + 'token/oauth/'
+API = BASE + 'open_api/'
+SIGNAL_URL = API + 'signal/v2/signals'
+SHORT_URL = API + 'consumption/v1/short_term'
+WEEK_URL = API + 'consumption/v1/weekly_forecasts'
+ANNUAL_URL = API + 'consumption/v1/annual_forecasts'
+GEN_URL = API + 'generation_forecast/v3/forecasts'
+TEMPO_URL = API + 'tempo_like_supply_contract/v1/tempo_like_calendars'
+RED_TOTAL, WHITE_TOTAL = 22, 43
+COLORS = ('bleu', 'blanc', 'rouge')
+TUNNEL = {11:(0,3),12:(6,6),1:(13,19),2:(20,22),3:(22,22)}
+# Provisional uncertainty, NOT RTE coefficients nor calibrated probabilities.
+SIGMA = {1:.020,2:.035,3:.050,4:.075,5:.090,6:.105}
+GEN_TYPES = ('WIND_ONSHORE','WIND_OFFSHORE','SOLAR')
+STEP = dt.timedelta(minutes=15)
 
-
-TOKEN_URL = "https://digital.iservices.rte-france.com/token/oauth/"
-CONS_SHORT_URL = "https://digital.iservices.rte-france.com/open_api/consumption/v1/short_term"
-CONS_WEEK_URL = "https://digital.iservices.rte-france.com/open_api/consumption/v1/weekly_forecasts"
-GEN_FORECAST_URL = "https://digital.iservices.rte-france.com/open_api/generation_forecast/v3/forecasts"
-CONS_ANNUAL_URL = "https://digital.iservices.rte-france.com/open_api/consumption/v1/annual_forecasts"
-
-Z_WHITE_EXPANSION = 0.30         # décale le seuil bleu/blanc vers le bas
-WHITE_MIDZONE_BOOST = 1.2        # boost du score blanc quand Z est médian
-BLUE_MIDZONE_PENALTY = 0.85      # petite pénalité sur bleu dans la zone médiane
-C_MEAN = 46050.0
-C_STD = 2160.0
-
-RED_TOTAL = 22
-WHITE_TOTAL = 43
-BLUE_TOTAL = 300
-
-SEASON_LENGTH = 151  # 01/11 -> 31/03
-TARGET_RED_DENSITY = RED_TOTAL / SEASON_LENGTH   # densité "normale" de rouges
-
-
-# Valeurs par défaut (si aucun argument n'est passé)
-RED_REMAINING = RED_TOTAL
-WHITE_REMAINING = WHITE_TOTAL
-BLUE_REMAINING = BLUE_TOTAL
-REAL_J1 = None
-
-# 1) Lecture des rouges / blancs restants
-try:
-    if len(sys.argv) >= 2:
-        RED_REMAINING = int(sys.argv[1])
-    if len(sys.argv) >= 3:
-        WHITE_REMAINING = int(sys.argv[2])
-except Exception:
-    RED_REMAINING = RED_TOTAL
-    WHITE_REMAINING = WHITE_TOTAL
-
-# 2) Lecture éventuelle du bleu restant ET/OU de la couleur réelle J+1
-if len(sys.argv) >= 4:
-    arg3 = sys.argv[3].strip().lower()
-    try:
-        BLUE_REMAINING = int(arg3)
-        if len(sys.argv) >= 5:
-            arg4 = sys.argv[4].strip().lower()
-            if arg4 in ("bleu", "blanc", "rouge"):
-                REAL_J1 = arg4
-    except ValueError:
-        if arg3 in ("bleu", "blanc", "rouge"):
-            REAL_J1 = arg3
+# ENR weather model: indicative regional weights, NOT a registry of individual parks.
+# SDES 2026-Q3 (published 2026-11-26): France 24.6 GW onshore, 2.3 GW offshore,
+# 35.4 GW PV including islands/overseas. Mainland-only modeling approximates
+# 24.5 / 2.3 / 34.3 GW; regional weights below are rounded proxy weights.
+# https://www.statistiques.developpement-durable.gouv.fr/tableau-de-bord-eolien-troisieme-trimestre-2026
+# https://www.statistiques.developpement-durable.gouv.fr/tableau-de-bord-solaire-photovoltaique-troisieme-trimestre-2026
+# name, lat, lon, relative onshore weight, relative PV weight
+ENR_LAND = [
+ ('Somme',49.90,2.55,3.1,.5),('Pas-de-Calais',50.35,2.35,2.2,.4),('Aisne',49.75,3.55,1.7,.4),
+ ('Marne',48.95,4.35,2.6,1.2),('Aube',48.40,4.25,1.4,.8),('Lorraine',48.85,6.25,1.2,.9),
+ ('Beauce',48.05,1.65,1.8,2.2),('Bretagne',48.15,-2.85,1.5,1.2),('Normandie',49.05,.65,1.1,.6),
+ ('Vendee',46.65,-1.25,1.4,1.6),('Poitou',46.35,.05,1.25,2.4),('Landes',44.10,-.65,.8,4.6),
+ ('Toulousain',43.65,1.65,.5,2.6),('Aude',43.13,2.65,1.35,2.8),('Bourgogne',47.40,4.70,1.3,1.8),
+ ('Auvergne',45.80,3.25,.45,1.7),('Rhone',45.10,4.85,.25,2.6),('Provence',43.75,5.15,.1,2.4),
+ ('Alpes du Sud',44.25,6.10,0,.8),('Ile-de-France',48.60,2.75,.15,.55),
+]
+# Offshore park clusters, approximate relative weights; no assumed future capacity.
+ENR_SEA = [('Saint-Nazaire',47.15,-2.55,480),('Saint-Brieuc',48.85,-2.60,496),
+ ('Fecamp',49.82,.22,497),('Yeu-Noirmoutier',46.88,-2.52,410),
+ ('Dieppe-Le-Treport',50.10,1.05,357),('Mediterranee',43.0,3.2,60)]
+ENR_CAPACITY = {'WIND_ONSHORE':24500.,'WIND_OFFSHORE':2300.,'SOLAR':34300.}
 
 
-def base_decision_from_probs(pB: float, pW: float, pR: float) -> str:
-    if pB >= pW and pB >= pR:
-        return "bleu"
-    if pR >= pW:
-        return "rouge"
-    return "blanc"
+def valid_weather(x):
+    return isinstance(x,(int,float)) and not isinstance(x,bool) and math.isfinite(x) and x>=0
 
 
-def http_post_token():
-    auth = base64.b64encode(f"{CLIENT_ID}:{CLIENT_SECRET}".encode()).decode()
-    data = urlencode({"grant_type": "client_credentials"}).encode()
-    headers = {
-        "Authorization": f"Basic {auth}",
-        "Content-Type": "application/x-www-form-urlencoded",
-    }
-    req = Request(TOKEN_URL, data=data, headers=headers)
-    with urlopen(req, timeout=20) as r:
-        return json.load(r)
+def wind_factor(v, offshore=False):
+    # Generic fleet power curve, not a manufacturer-specific turbine model.
+    if not valid_weather(v): return None
+    cutin,rated,cutout=(3.,12.,25.) if offshore else (3.,12.,25.)
+    if v<cutin or v>=cutout: return 0.
+    return min(1.,(v**3-cutin**3)/(rated**3-cutin**3))*(.90 if offshore else .86)
+
+
+def weather_hourly(payload, points, sea=False):
+    """Convert Open-Meteo UTC hours to interval-start MW by component.
+    Wind is instantaneous; average endpoint power. Radiation is preceding-hour
+    mean; take t+1 for interval [t,t+1). Reject incomplete spatial coverage.
+    """
+    if isinstance(payload,dict): payload=[payload]
+    if not isinstance(payload,list) or len(payload)!=len(points): raise ValueError('Nombre de points ENR inattendu')
+    sums=defaultdict(lambda:defaultdict(float)); coverage=defaultdict(lambda:defaultdict(float))
+    kinds=('WIND_OFFSHORE',) if sea else ('WIND_ONSHORE','SOLAR')
+    totals={k:sum(p[3 if k!='SOLAR' else 4] for p in points) for k in kinds}
+    for obj,point in zip(payload,points):
+        if not isinstance(obj,dict) or obj.get('error'): continue
+        h=obj.get('hourly',{}); units=obj.get('hourly_units',{})
+        if units.get('wind_speed_100m') not in ('m/s',None): raise ValueError('Unite vent ENR inattendue')
+        if not sea and units.get('shortwave_radiation') not in ('W/m²','W/m2',None): raise ValueError('Unite rayonnement ENR inattendue')
+        stamps=h.get('time',[]); wind=h.get('wind_speed_100m',[]); rad=h.get('shortwave_radiation',[])
+        for i in range(len(stamps)-1):
+            try:
+                a=dt.datetime.fromisoformat(stamps[i]).replace(tzinfo=UTC)
+                end=dt.datetime.fromisoformat(stamps[i+1]).replace(tzinfo=UTC)
+                if end-a!=dt.timedelta(hours=1): continue
+            except (ValueError,TypeError): continue
+            for k in kinds:
+                w=point[3 if k!='SOLAR' else 4]
+                if not w: continue
+                if k=='SOLAR':
+                    if i+1>=len(rad) or not valid_weather(rad[i+1]): continue
+                    # Fleet-average GHI proxy incl. orientation, losses and self-consumption.
+                    f=min(1.,.80*rad[i+1]/1000.)
+                else:
+                    if i+1>=len(wind): continue
+                    f0,f1=wind_factor(wind[i],sea),wind_factor(wind[i+1],sea)
+                    if f0 is None or f1 is None: continue
+                    f=(f0+f1)/2
+                sums[k][a]+=w*f; coverage[k][a]+=w
+    return {k:{a:ENR_CAPACITY[k]*v/totals[k] for a,v in sums[k].items()
+               if math.isclose(coverage[k][a],totals[k],rel_tol=1e-8)} for k in kinds}
+
+
+def get_enr_weather(today):
+    # UTC avoids ambiguous DST hours; 9 UTC days cover J+7 and its 06h endpoint.
+    # Separate land/sea to ensure the selected weather grid matches the site.
+    def fetch(points,sea):
+        return api_json('https://api.open-meteo.com/v1/forecast',params={
+            'latitude':','.join(str(p[1]) for p in points),'longitude':','.join(str(p[2]) for p in points),
+            'hourly':'wind_speed_100m' if sea else 'wind_speed_100m,shortwave_radiation',
+            'wind_speed_unit':'ms','timezone':'GMT','forecast_days':9,'past_days':1,
+            'cell_selection':'sea' if sea else 'land'})
+    result={}; warnings=[]
+    for points,sea in ((ENR_LAND,False),(ENR_SEA,True)):
+        try: result.update(weather_hourly(fetch(points,sea),points,sea))
+        except Exception as exc: warnings.append(f'ENR meteo {"mer" if sea else "terre"}: {type(exc).__name__}: {exc}')
+    return {'series':result,'warnings':warnings}
+
+
+
+
+def parse_ts(s):
+    x = dt.datetime.fromisoformat(s.replace('Z','+00:00'))
+    if x.tzinfo is None:
+        raise ValueError('Timestamp sans fuseau horaire')
+    return x.astimezone(UTC)
+
+
+def midnight(d):
+    return dt.datetime.combine(d, dt.time(), PARIS)
+
+
+def params_dates(start, end):
+    return {'start_date': midnight(start).isoformat(), 'end_date': midnight(end).isoformat()}
+
+
+def api_json(url, token=None, params=None, data=None, headers=None):
+    h = {'Accept':'application/json'}
+    if token: h['Authorization'] = 'Bearer ' + token
+    h.update(headers or {})
+    if params: url += '?' + urlencode(params)
+    with urlopen(Request(url, data=data, headers=h), timeout=12) as response:
+        return json.load(response)
 
 
 def get_token():
-    return http_post_token()["access_token"]
+    if CLIENT_ID == 'REMPLIR ICI' or CLIENT_SECRET == 'REMPLIR ICI':
+        raise ValueError('Renseigner CLIENT_ID et CLIENT_SECRET ou les variables RTE_CLIENT_ID/SECRET')
+    auth = base64.b64encode(f'{CLIENT_ID}:{CLIENT_SECRET}'.encode()).decode()
+    return api_json(TOKEN_URL, data=urlencode({'grant_type':'client_credentials'}).encode(),
+                    headers={'Authorization':'Basic '+auth,'Content-Type':'application/x-www-form-urlencoded'})['access_token']
 
 
-def http_get_json(url, token, params=None):
-    if params:
-        url = url + "?" + urlencode(params)
-    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
-    req = Request(url, headers=headers)
-    with urlopen(req, timeout=30) as r:
-        return json.load(r)
+def blocks(payload, key):
+    x = payload.get(key, [])
+    if isinstance(x, dict): return [x]
+    return x if isinstance(x,list) else []
 
 
-def get_annual(token):
-    """
-    Toujours concaténer (année N-1) + (année N)
-    pour garantir un historique utilisable en début d'année.
-    """
-    today = dt.date.today()
-    tz = dt.timezone(dt.timedelta(hours=1))  # ok en hiver; sinon tu peux passer en UTC
-
-    def _fetch_year(year: int):
-        start_dt = dt.datetime(year, 1, 1, 0, 0, 0, tzinfo=tz)
-        end_dt   = dt.datetime(year + 1, 1, 1, 0, 0, 0, tzinfo=tz)
-        params = {"start_date": start_dt.isoformat(), "end_date": end_dt.isoformat()}
-        return http_get_json(CONS_ANNUAL_URL, token, params)
-
-    y = today.year
-    a = _fetch_year(y - 1)
-    b = _fetch_year(y)
-
-    forecasts = []
-    forecasts += a.get("annual_forecasts", []) if isinstance(a, dict) else []
-    forecasts += b.get("annual_forecasts", []) if isinstance(b, dict) else []
-    return {"annual_forecasts": forecasts}
+def values(block):
+    return blocks(block,'values')
 
 
-
-def _quantile(values, p: float) -> float:
-    if not values:
-        raise ValueError("Liste vide pour le calcul de quantile")
-    vals = sorted(values)
-    n = len(vals)
-    if n == 1:
-        return vals[0]
-    pos = p * (n - 1)
-    i_low = int(math.floor(pos))
-    i_high = int(math.ceil(pos))
-    if i_low == i_high:
-        return vals[i_low]
-    frac = pos - i_low
-    return vals[i_low] + frac * (vals[i_high] - vals[i_low])
+def season_start(d):
+    return dt.date(d.year if d.month >= 9 else d.year-1, 9, 1)
 
 
-def _extract_load_value(raw):
-    if raw is None:
-        return None
-    if isinstance(raw, dict):
-        raw = raw.get("value")
-    try:
-        val = float(raw)
-    except (TypeError, ValueError):
-        return None
-    if val <= 0:
-        return None
-    return val
+def pp_start(d):
+    return dt.date(d.year if d.month >= 11 else d.year-1,11,1)
 
 
-def build_daily_data_from_annual_forecasts(annual_json):
-    daily_data = []
-    forecasts = annual_json.get("annual_forecasts", [])
-    if not forecasts:
-        return daily_data
+def date_range(a,b):
+    for i in range((b-a).days): yield a+dt.timedelta(days=i)
 
-    for year_block in forecasts:
-        if not isinstance(year_block, dict):
-            continue
 
-        weekly_values = year_block.get("values", [])
-        if not isinstance(weekly_values, list):
-            continue
+def season_code(d):
+    y = pp_start(d).year
+    return f'{y%100:02d}{(y+1)%100:02d}'
 
-        weekly_values = sorted(weekly_values, key=lambda w: w.get("start_date", ""))
-        block_data = []
 
-        for w in weekly_values:
-            sd = w.get("start_date")
-            if not sd:
-                continue
-            try:
-                start_dt = dt.datetime.fromisoformat(sd.replace("Z", "+00:00"))
-            except Exception:
-                continue
+def easter(y):
+    a=y%19; b,c=divmod(y,100); d,e=divmod(b,4); f=(b+8)//25; g=(b-f+1)//3
+    h=(19*a+b-d-g+15)%30; i,k=divmod(c,4); l=(32+2*e+2*i-h-k)%7
+    m=(a+11*h+22*l)//451; n,p=divmod(h+l-7*m+114,31)
+    return dt.date(y,n,p+1)
 
-            start_date = start_dt.date()
 
-            mean_load = _extract_load_value(w.get("average_load_monday_to_sunday"))
-            if mean_load is None:
-                mean_load = _extract_load_value(w.get("average_load_saturday_to_friday"))
+def eligible(d):
+    if d.month not in TUNNEL or d.weekday()>=5: return False
+    if (d.month,d.day) in {(11,1),(11,11),(12,24),(12,25),(12,31),(1,1)}: return False
+    return d != easter(d.year)+dt.timedelta(days=1)
 
-            if mean_load is None:
-                weekly_min = _extract_load_value(w.get("weekly_minimum"))
-                weekly_max = _extract_load_value(w.get("weekly_maximum"))
-                if weekly_min is not None and weekly_max is not None:
-                    mean_load = 0.5 * (weekly_min + weekly_max)
 
-            if mean_load is None:
-                continue
-
-            for k in range(7):
-                d = start_date + dt.timedelta(days=k)
-                block_data.append({"date": d.isoformat(), "c_net_mean": float(mean_load)})
-
+class Thresholds:
+    def __init__(self, root=ROOT): self.root=Path(root); self.cache={}; self.errors={}
+    def load(self,d,lag):
+        code=season_code(d); key=(code,lag)
+        if key in self.cache: return self.cache[key]
+        table={}; start=pp_start(d); end=dt.date(start.year+1,4,1)
         try:
-            start_block = dt.datetime.fromisoformat(year_block["start_date"].replace("Z", "+00:00")).date()
-            end_block = dt.datetime.fromisoformat(year_block["end_date"].replace("Z", "+00:00")).date()
-            block_data = [
-                row for row in block_data
-                if start_block <= dt.date.fromisoformat(row["date"]) < end_block
-            ]
-        except Exception:
-            pass
-
-        daily_data.extend(block_data)
-
-    by_date = {}
-    for row in daily_data:
-        by_date[row["date"]] = row
-
-    return sorted(by_date.values(), key=lambda x: x["date"])
-
-
-def compute_z(c_net):
-    return (c_net - C_MEAN) / C_STD
-
-
-def compute_z_rte_like(target_date, c_net_today, daily_data, window_days: int = 365, return_debug: bool = False):
-    if isinstance(target_date, dt.date) is False:
-        target_date = datetime.strptime(str(target_date), "%Y-%m-%d").date()
-
-    history_vals = []
-    used_first = None
-    used_last = None
-
-    for entry in daily_data:
-        try:
-            d = datetime.strptime(entry["date"], "%Y-%m-%d").date()
-        except Exception:
-            continue
-
-        if d >= target_date:
-            break
-
-        if (target_date - d).days <= window_days:
-            v = entry.get("c_net_mean")
-            try:
-                v = float(v)
-            except (TypeError, ValueError):
-                continue
-            if v > 0:
-                history_vals.append(v)
-                if used_first is None:
-                    used_first = d
-                used_last = d
-
-    debug = {
-        "window_days": window_days,
-        "window_end_inclusive": target_date.isoformat(),
-        "window_start_inclusive": (target_date - dt.timedelta(days=window_days)).isoformat(),
-        "history_count": len(history_vals),
-        "history_first_date": used_first.isoformat() if used_first else None,
-        "history_last_date": used_last.isoformat() if used_last else None,
-    }
-
-    if len(history_vals) < 3:
-        m = sum(history_vals) / len(history_vals) if history_vals else c_net_today
-        var = (
-            sum((x - m) ** 2 for x in history_vals) / max(1, len(history_vals) - 1)
-            if len(history_vals) > 1 else 1.0
-        )
-        std = math.sqrt(var) or 1.0
-        z = (c_net_today - m) / std
-        debug["method"] = "fallback_std_small_sample"
-        debug["mean"] = m
-        debug["std"] = std
-        return (z, debug) if return_debug else z
-
-    q40 = _quantile(history_vals, 0.4)
-    q80 = _quantile(history_vals, 0.8)
-
-    denom = q80 - q40
-    if abs(denom) < 1e-6:
-        denom = 1e-6
-
-    z = (c_net_today - q40) / denom
-    debug["method"] = "rte_like_quantiles"
-    debug["q40"] = q40
-    debug["q80"] = q80
-    debug["denom"] = denom
-
-    return (z, debug) if return_debug else z
-
-
-def group_daily_avg(values):
-    by_day = defaultdict(list)
-    for v in values:
-        if not isinstance(v, dict):
-            continue
-        val = v.get("value")
-        sd = v.get("start_date")
-        if val is None or sd is None:
-            continue
-        try:
-            d = dt.datetime.fromisoformat(sd.replace("Z", "+00:00")).date()
-        except Exception:
-            continue
-        try:
-            by_day[d].append(float(val))
-        except Exception:
-            continue
-    return {d: sum(lst) / len(lst) for d, lst in by_day.items() if lst}
-
-
-def get_generation(token):
-    params = {"type": "D-1,D-2,D-3"}
-    data = http_get_json(GEN_FORECAST_URL, token, params)
-
-    per_ts = {}
-    blocks = data.get("forecasts", [])
-    if isinstance(blocks, dict):
-        blocks = [blocks]
-
-    for block in blocks:
-        if not isinstance(block, dict):
-            continue
-        vals = block.get("values", [])
-        if isinstance(vals, dict):
-            vals = [vals]
-        if not isinstance(vals, list):
-            continue
-
-        for v in vals:
-            if not isinstance(v, dict):
-                continue
-            sd = v.get("start_date")
-            val = v.get("value")
-            if sd is None or val is None:
-                continue
-            try:
-                fv = float(val)
-            except (TypeError, ValueError):
-                continue
-            per_ts[sd] = per_ts.get(sd, 0.0) + fv
-
-    merged = [{"start_date": sd, "value": fv} for sd, fv in per_ts.items()]
-    return group_daily_avg(merged)
-
-
-def get_short_term(token):
-    data = http_get_json(CONS_SHORT_URL, token)
-    values = []
-    blocks = data.get("short_term", [])
-    if isinstance(blocks, dict):
-        blocks = [blocks]
-    for block in blocks:
-        if not isinstance(block, dict):
-            continue
-        vals = block.get("values", [])
-        if isinstance(vals, dict):
-            vals = [vals]
-        if isinstance(vals, list):
-            values.extend([v for v in vals if isinstance(v, dict)])
-    return group_daily_avg(values)
-
-
-def get_weekly(token):
-    data = http_get_json(CONS_WEEK_URL, token)
-    values = []
-    blocks = data.get("weekly_forecasts", [])
-    if isinstance(blocks, dict):
-        blocks = [blocks]
-    for block in blocks:
-        if not isinstance(block, dict):
-            continue
-        vals = block.get("values", [])
-        if isinstance(vals, dict):
-            vals = [vals]
-        if isinstance(vals, list):
-            values.extend([v for v in vals if isinstance(v, dict)])
-    return group_daily_avg(values)
-
-
-def tempo_year_start(d):
-    s = dt.date(d.year, 9, 1)
-    return s if d >= s else dt.date(d.year - 1, 9, 1)
-
-
-def tempo_year_end_inclusive(d: dt.date) -> dt.date:
-    start = tempo_year_start(d)
-    return dt.date(start.year + 1, 8, 31)
-
-
-def day_index(d):
-    return (d - tempo_year_start(d)).days + 1
-
-
-def thresholds(j, red_rem, white_rem):
-    stock_br = red_rem + white_rem
-    s_br = 4.00 - 0.015 * j - 0.026 * stock_br
-    s_r = 3.15 - 0.010 * j - 0.031 * red_rem
-    return s_br, s_r
-
-
-def is_french_public_holiday(d: dt.date) -> bool:
-    year = d.year
-    fixed = {
-        dt.date(year, 1, 1),
-        dt.date(year, 5, 1),
-        dt.date(year, 5, 8),
-        dt.date(year, 7, 14),
-        dt.date(year, 8, 15),
-        dt.date(year, 11, 1),
-        dt.date(year, 11, 11),
-        dt.date(year, 12, 25),
-    }
-
-    a = year // 100
-    b = year % 100
-    c = (3 * (a + 25)) // 4
-    d0 = (3 * (a + 25)) % 4
-    e = (8 * (a + 11)) // 25
-    f = (5 * a + b) % 19
-    g = (19 * f + c - e) % 30
-    h = (f + 11 * g) // 319
-    j = (60 * (5 - d0) + b) % 4
-    k = (60 * (5 - d0) + b) // 4
-    m = (2 * j + k - g - h) % 7
-    n = (g - h + m + 114) // 31
-    p = (g - h + m + 114) % 31
-    easter = dt.date(year, n, p + 1)
-
-    easter_monday = easter + dt.timedelta(days=1)
-    ascension = easter + dt.timedelta(days=39)
-    pentecost_monday = easter + dt.timedelta(days=50)
-
-    movable = {easter_monday, ascension, pentecost_monday}
-    return d in fixed or d in movable
-
-
-def allowed(color, d):
-    wd = d.weekday()
-    month = d.month
-    if color == "rouge":
-        if wd >= 5 or is_french_public_holiday(d):
-            return False
-        if month not in (11, 12, 1, 2, 3):
-            return False
-        return True
-    if color == "blanc":
-        return wd != 6
-    return True
-
-
-def red_season_bounds(d: dt.date):
-    if d.month >= 11:
-        start = dt.date(d.year, 11, 1)
-        end = dt.date(d.year + 1, 3, 31)
-    else:
-        start = dt.date(d.year - 1, 11, 1)
-        end = dt.date(d.year, 3, 31)
-    return start, end
-
-
-def count_red_eligible_days_left(start_date: dt.date, end_date: dt.date) -> int:
-    if end_date < start_date:
-        return 0
-    n = 0
-    d = start_date
-    while d <= end_date:
-        if allowed("rouge", d):
-            n += 1
-        d += dt.timedelta(days=1)
-    return n
-
-
-def red_target_used_fraction(d: dt.date) -> float:
-    start, end = red_season_bounds(d)
-    y = start.year
-    d1 = dt.date(y, 12, 10)
-    d2 = dt.date(y + 1, 1, 31)
-    d3 = dt.date(y + 1, 2, 20)
-    d4 = end
-
-    def lerp(a_date, b_date, a_val, b_val):
-        if d <= a_date:
-            return a_val
-        if d >= b_date:
-            return b_val
-        t = (d - a_date).days / max(1, (b_date - a_date).days)
-        return a_val + t * (b_val - a_val)
-
-    if d <= d1:
-        return lerp(start, d1, 0.00, 0.05)
-    if d <= d2:
-        return lerp(d1, d2, 0.05, 0.65)
-    if d <= d3:
-        return lerp(d2, d3, 0.65, 0.95)
-    return lerp(d3, d4, 0.95, 1.00)
-
-
-def red_floor_from_z(z: float) -> float:
-    if z is None:
-        return 0.0
-    if z < 1:
-        return 0.00
-    if z < 1.10:
-        return 0.10
-    if z < 1.20:
-        return 0.12
-    if z < 1.25:
-        return 0.15
-    if z < 1.30:
-        return 0.18
-    return 0.22
-
-
-# --- Indicateur national type EDF (degrés-jours) via Open-Meteo ---
-T_BASE = 17.0
-
-
-AIRPORTS = [
-    ("Abbeville", 50.1360, 1.8340, 1.0),
-    ("Bale_Mulhouse", 47.5896, 7.5299, 2.0),
-    ("Bordeaux_Merignac", 44.8283, -0.7156, 4.0),
-    ("Boulogne", 50.6589, 1.6246, 1.0),
-    ("Bourges", 47.0581, 2.3703, 4.2),
-    ("Bourg_St_Maurice", 45.6170, 6.7680, 2.75),
-    ("Brest_Guipavas", 48.4479, -4.4185, 4.2),
-    ("Caen_Carpiquet", 49.1733, -0.4500, 2.5),
-    ("Clermont_Ferrand_Aulnat", 45.7867, 3.1692, 2.75),
-    ("Dijon_Longvic", 47.2689, 5.0883, 1.0),
-    ("Le_Luc_Le_Cannet", 43.3847, 6.3872, 1.2),
-    ("Lille_Lesquin", 50.5619, 3.0894, 3.0),
-    ("Limoges_Bellegarde", 45.8614, 1.1794, 3.2),
-    ("Lyon_St_Exupery", 45.7256, 5.0811, 5.5),
-    ("Marseille_Marignane", 43.4372, 5.2150, 2.4),
-    ("Montpellier_Frejorgues", 43.5762, 3.9630, 1.6),
-    ("Nancy_Essey", 48.6921, 6.2303, 3.0),
-    ("Nantes_Atlantique", 47.1532, -1.6107, 4.2),
-    ("Nevers_Marzy", 46.9990, 3.1130, 1.5),
-    ("Nice_Cote_dAzur", 43.6653, 7.2150, 3.6),
-    ("Nimes_Courbessac", 43.8564, 4.4050, 2.4),
-    ("Orange_Caritat", 44.1405, 4.8667, 1.2),
-    ("Paris_Montsouris", 48.8218, 2.3376, 11.25),
-    ("Perpignan_Rivesaltes", 42.7404, 2.8707, 1.6),
-    ("Rennes_St_Jacques", 48.0695, -1.7348, 4.2),
-    ("Saint_Auban", 44.0583, 5.9917, 1.2),
-    ("Strasbourg_Entzheim", 48.5383, 7.6282, 1.0),
-    ("Tarbes_Lourdes", 43.1786, -0.0064, 4.0),
-    ("Toulouse_Blagnac", 43.6306, 1.3638, 1.6),
-    ("Tours_Parcay_Meslay", 47.4322, 0.7276, 4.2),
-    ("Trappes", 48.7742, 1.9936, 11.25),
-    ("Troyes_Barberey", 48.3239, 4.0179, 1.5),
-]
-def fetch_open_meteo_daily_tmin_tmax(latitudes, longitudes, forecast_days=8):
-    base_url = "https://api.open-meteo.com/v1/forecast"
-    params = {
-        "latitude": ",".join(f"{x:.4f}" for x in latitudes),
-        "longitude": ",".join(f"{x:.4f}" for x in longitudes),
-        "daily": "temperature_2m_min,temperature_2m_max",
-        "timezone": "Europe/Paris",
-        "forecast_days": str(forecast_days),
-    }
-    url = f"{base_url}?{urlencode(params)}"
-    with urlopen(url, timeout=20) as r:
-        data = json.loads(r.read().decode("utf-8"))
-
-    # si Open-Meteo renvoie une erreur explicite
-    if isinstance(data, dict) and data.get("error"):
-        raise RuntimeError(f"Open-Meteo error: {data.get('reason')}")
-
-    return data
-
-
-def compute_national_tmoy(today: dt.date, offsets=range(1, 4)):
-    """
-    Retourne {date: Tmoy_nationale} avec Tmoy=(Tmin+Tmax)/2 pondéré par station.
-    """
-    latitudes = [a[1] for a in AIRPORTS]
-    longitudes = [a[2] for a in AIRPORTS]
-    poids_total = sum(a[3] for a in AIRPORTS)
-
-    data = fetch_open_meteo_daily_tmin_tmax(latitudes, longitudes, forecast_days=max(offsets) + 1)
-
-    # Open-Meteo peut renvoyer dict (mono) ou liste (multi)
-    if isinstance(data, dict):
-        data = [data]
-
-    acc = {off: 0.0 for off in offsets}
-    used = {off: 0.0 for off in offsets}
-
-    for station_data, (_, _, _, poids) in zip(data, AIRPORTS):
-        daily = station_data.get("daily", {})
-        tmins = daily.get("temperature_2m_min", [])
-        tmaxs = daily.get("temperature_2m_max", [])
-        if len(tmins) < (max(offsets) + 1) or len(tmaxs) < (max(offsets) + 1):
-            continue
-
-        for off in offsets:
-            tmoy = (tmins[off] + tmaxs[off]) / 2.0
-            acc[off] += tmoy * poids
-            used[off] += poids
-
-    out = {}
-    for off in offsets:
-        d = today + dt.timedelta(days=off)
-        out[d] = round(acc[off] / used[off], 2) if used[off] > 0 else None
+            path=self.root/f'tableauseuils_pp_{code}_j-{lag}.csv'
+            with path.open(encoding='utf-8-sig',newline='') as f:
+                for row in csv.DictReader(f,delimiter=';'):
+                    day=dt.datetime.strptime(row['date'],'%d/%m/%Y').date(); used=int(row['stockEpuise'])
+                    t=float(row['seuilBellman']); reason=row['reason']
+                    if not start<=day<end or not 0<=used<=22 or (day,used) in table or math.isnan(t) or t<0:
+                        raise ValueError('ligne de matrice invalide ou dupliquée')
+                    if (reason.startswith('BLOCKED_') and t!=math.inf or reason.startswith('FORCED_') and t!=0 or
+                        reason=='BELLMAN_CALCULATED_THRESHOLD' and not 0<t<math.inf or
+                        not reason.startswith(('BLOCKED_','FORCED_')) and reason!='BELLMAN_CALCULATED_THRESHOLD'):
+                        raise ValueError('seuil/motif incohérent')
+                    table[day,used]=(t,reason)
+            if len(table)!=(end-start).days*23: raise ValueError('matrice incomplète')
+        except (OSError,ValueError,KeyError) as exc:
+            self.errors[f'{code}_j{lag}']=str(exc); table={}
+        self.cache[key]=table; return table
+    def get(self,d,used,lag=1):
+        if not eligible(d): return math.inf,'CALENDAR_BLOCK'
+        if used>=TUNNEL[d.month][1]: return math.inf,'MONTHLY_CAP'
+        return self.load(d,lag).get((d,used),(None,'MATRIX_MISSING'))
+
+
+def parse_signals(payload):
+    out={}
+    for block in blocks(payload,'signals'):
+        if block.get('type')!='PP': continue
+        for row in values(block):
+            v=row.get('value')
+            if type(v) is not bool: continue
+            day=parse_ts(row['start_date']).astimezone(PARIS).date()
+            updated=parse_ts(row['updated_date'])
+            if day not in out or updated>out[day][1]: out[day]=(v,updated)
     return out
 
-def meteo_strength_from_delta(delta_T: float | None) -> float:
-    """
-    Transforme delta_T (T_future - T_norm) en intensité de shift sur les probas.
-    Valeurs petites et bornées (pas de magie).
-    """
-    if delta_T is None:
-        return 0.0
-    a = abs(delta_T)
-    if a < 0.5:
-        return 0.00
-    if a < 1.5:
-        return 0.03
-    if a < 3.0:
-        return 0.06
-    return 0.09
 
-def apply_meteo_shift_probs(pB: float, pW: float, pR: float, delta_T: float | None):
-    """
-    Applique un biais météo en CHAÎNE:
-    - doux (delta_T > 0): R->W puis W->B
-    - froid (delta_T < 0): B->W puis W->R
-    Jamais de transfert direct rouge<->bleu.
-    """
-    if any(v is None for v in (pB, pW, pR)) or delta_T is None:
-        return pB, pW, pR, 0.0
-
-    s = meteo_strength_from_delta(delta_T)
-    if s <= 0:
-        return pB, pW, pR, 0.0
-
-    # Copie
-    b, w, r = float(pB), float(pW), float(pR)
-
-    if delta_T > 0:
-        # doux : rouge -> blanc
-        x1 = min(s, r)
-        r -= x1
-        w += x1
-        # puis blanc -> bleu
-        x2 = min(s, w)
-        w -= x2
-        b += x2
-        applied = x1 + x2
-    else:
-        # froid : bleu -> blanc
-        x1 = min(s, b)
-        b -= x1
-        w += x1
-        # puis blanc -> rouge
-        x2 = min(s, w)
-        w -= x2
-        r += x2
-        applied = x1 + x2
-
-    # renormalisation
-    tot = b + w + r
-    if tot > 0:
-        b, w, r = b / tot, w / tot, r / tot
-
-    return b, w, r, round(applied, 4)
-
-
-def rte_norm_temp(d: dt.date) -> float | None:
-    """
-    Norme RTE 1991-2020 pour le jour calendaire.
-    """
-    key = (d.month, d.day)
-    NORMS = {
-        (11, 1): 11.14,
-        (11, 2): 10.08,
-        (11, 3): 10.92,
-        (11, 4): 10.26,
-        (11, 5): 9.69,
-        (11, 6): 9.16,
-        (11, 7): 9.16,
-        (11, 8): 9.63,
-        (11, 9): 9.71,
-        (11, 10): 9.51,
-        (11, 11): 9.59,
-        (11, 12): 9.43,
-        (11, 13): 9.33,
-        (11, 14): 8.63,
-        (11, 15): 7.74,
-        (11, 16): 7.92,
-        (11, 17): 7.61,
-        (11, 18): 7.57,
-        (11, 19): 7.44,
-        (11, 20): 7.30,
-        (11, 21): 7.18,
-        (11, 22): 7.01,
-        (11, 23): 6.89,
-        (11, 24): 6.84,
-        (11, 25): 7.16,
-        (11, 26): 6.93,
-        (11, 27): 6.60,
-        (11, 28): 6.36,
-        (11, 29): 6.53,
-        (11, 30): 6.73,
-        (12, 1): 6.53,
-        (12, 2): 6.41,
-        (12, 3): 6.42,
-        (12, 4): 6.63,
-        (12, 5): 6.79,
-        (12, 6): 6.20,
-        (12, 7): 5.84,
-        (12, 8): 5.96,
-        (12, 9): 5.72,
-        (12, 10): 5.35,
-        (12, 11): 5.26,
-        (12, 12): 5.37,
-        (12, 13): 5.28,
-        (12, 14): 4.72,
-        (12, 15): 4.62,
-        (12, 16): 5.27,
-        (12, 17): 5.48,
-        (12, 18): 5.59,
-        (12, 19): 5.75,
-        (12, 20): 5.45,
-        (12, 21): 5.51,
-        (12, 22): 5.61,
-        (12, 23): 5.41,
-        (12, 24): 5.49,
-        (12, 25): 5.39,
-        (12, 26): 4.85,
-        (12, 27): 4.71,
-        (12, 28): 4.58,
-        (12, 29): 4.61,
-        (12, 30): 4.96,
-        (12, 31): 4.81,
-        (1, 1): 4.73,
-        (1, 2): 5.10,
-        (1, 3): 4.88,
-        (1, 4): 4.57,
-        (1, 5): 4.79,
-        (1, 6): 5.12,
-        (1, 7): 4.35,
-        (1, 8): 4.31,
-        (1, 9): 4.85,
-        (1, 10): 4.92,
-        (1, 11): 4.83,
-        (1, 12): 4.30,
-        (1, 13): 4.54,
-        (1, 14): 4.71,
-        (1, 15): 4.59,
-        (1, 16): 4.85,
-        (1, 17): 5.31,
-        (1, 18): 5.23,
-        (1, 19): 5.70,
-        (1, 20): 5.64,
-        (1, 21): 5.55,
-        (1, 22): 5.73,
-        (1, 23): 5.38,
-        (1, 24): 5.00,
-        (1, 25): 4.80,
-        (1, 26): 4.49,
-        (1, 27): 4.49,
-        (1, 28): 4.91,
-        (1, 29): 4.87,
-        (1, 30): 4.68,
-        (1, 31): 4.57,
-        (2, 1): 5.01,
-        (2, 2): 5.13,
-        (2, 3): 5.57,
-        (2, 4): 5.80,
-        (2, 5): 6.17,
-        (2, 6): 6.34,
-        (2, 7): 5.96,
-        (2, 8): 6.11,
-        (2, 9): 5.77,
-        (2, 10): 5.19,
-        (2, 11): 5.27,
-        (2, 12): 5.54,
-        (2, 13): 4.76,
-        (2, 14): 4.76,
-        (2, 15): 4.90,
-        (2, 16): 4.73,
-        (2, 17): 5.04,
-        (2, 18): 5.31,
-        (2, 19): 5.24,
-        (2, 20): 5.40,
-        (2, 21): 5.30,
-        (2, 22): 5.46,
-        (2, 23): 6.00,
-        (2, 24): 6.16,
-        (2, 25): 6.27,
-        (2, 26): 6.39,
-        (2, 27): 6.52,
-        (2, 28): 7.03,
-        (3, 1): 6.90,
-        (3, 2): 6.85,
-        (3, 3): 6.78,
-        (3, 4): 6.65,
-        (3, 5): 6.61,
-        (3, 6): 6.97,
-        (3, 7): 7.46,
-        (3, 8): 7.83,
-        (3, 9): 7.96,
-        (3, 10): 8.03,
-        (3, 11): 8.45,
-        (3, 12): 8.47,
-        (3, 13): 8.30,
-        (3, 14): 8.65,
-        (3, 15): 9.04,
-        (3, 16): 9.32,
-        (3, 17): 9.24,
-        (3, 18): 9.32,
-        (3, 19): 9.12,
-        (3, 20): 9.34,
-        (3, 21): 9.39,
-        (3, 22): 9.23,
-        (3, 23): 9.38,
-        (3, 24): 9.63,
-        (3, 25): 9.51,
-        (3, 26): 9.23,
-        (3, 27): 9.26,
-        (3, 28): 9.23,
-        (3, 29): 9.37,
-        (3, 30): 9.35,
-        (3, 31): 9.90,
-    }
-
-    # Année bissextile : si 29/02 absent, on prend 28/02
-    if key == (2, 29):
-        return NORMS.get((2, 29), NORMS.get((2, 28)))
-
-    return NORMS.get(key)
-
-
-def shrink_probs(pB: float, pW: float, pR: float, lam: float):
-    u = 1.0 / 3.0
-    pB2 = (1 - lam) * pB + lam * u
-    pW2 = (1 - lam) * pW + lam * u
-    pR2 = (1 - lam) * pR + lam * u
-    s = pB2 + pW2 + pR2
-    if s <= 0:
-        return u, u, u
-    return pB2 / s, pW2 / s, pR2 / s
-
-
-def mask_probs_by_calendar(d, pB: float, pW: float, pR: float):
-    wd = d.weekday()
-    if wd == 6:
-        return 1.0, 0.0, 0.0
-    if not allowed("rouge", d):
-        pR = 0.0
-    if not allowed("blanc", d):
-        pW = 0.0
-    if wd == 5:
-        pR = 0.0
-    s = pB + pW + pR
-    if s <= 0:
-        if wd == 5:
-            return 0.65, 0.35, 0.0
-        return 0.8, 0.2, 0.0
-    return pB / s, pW / s, pR / s
-
-
-def decide_color_with_probs(d, z, j, red_rem, white_rem, blue_rem):
-    s_br, s_r = thresholds(j, red_rem, white_rem)
-    wd = d.weekday()
-
-    # Seuils ajustés : on élargit la zone blanche vers le bas
-    s_br_adj = s_br - Z_WHITE_EXPANSION
-    s_r_adj = s_r
-
-    # Dimanche 100% bleu
-    if wd == 6:
-        return "bleu", red_rem, white_rem, blue_rem, 1.0, 0.0, 0.0
-
-    # Couleurs autorisées
-    allowed_red = allowed("rouge", d) and red_rem > 0
-    allowed_white = allowed("blanc", d) and white_rem > 0
-
-    # Scores de départ : on réduit un peu l'avantage natif du bleu,
-    # et on donne un petit socle à blanc.
-    score_b = 0.9
-    score_w = 0.1
-    score_r = 0.0
-
-    month, day = d.month, d.day
-    coeur_hiver = (
-        (month == 12 and day >= 10) or
-        (month == 1) or
-        (month == 2 and day <= 20)
-    )
-
-    if coeur_hiver and wd < 5 and not is_french_public_holiday(d):
-        score_b = 0.6
-        score_w = 0.25
-        score_r = 0.15
-
-    # Scoring brut selon Z (avec seuils ajustés)
-    if z is not None:
-        if z < s_br_adj:
-            # Zone clairement bleue
-            score_b += (s_br_adj - z) * 0.8
-            if allowed_white:
-                score_w += max(0.0, z - (s_br_adj - 1.5)) * 0.4
-
-        elif z < s_r_adj:
-            # Zone médiane : blanc probable, bleu encore en lice
-            delta_bw = z - s_br_adj
-
-            # Bleu gagne un peu quand on est proche de s_br_adj, mais moins qu'avant
-            score_b += max(0.0, s_r_adj - z) * 0.25
-
-            # Blanc a un socle plus élevé et une pente un peu plus forte
-            if allowed_white:
-                score_w += 0.45 + delta_bw * 0.85
-
-            # Rouge commence à apparaître, mais plus doucement
-            if allowed_red:
-                score_r += max(0.0, z - (s_r_adj - 0.5)) * 0.5
-
-        else:
-            # Zone tendue : blanc/rouge en concurrence, bleu décroît
-            if allowed_white:
-                score_w += 0.4 + max(0.0, z - s_br_adj) * 0.55
-            if allowed_red:
-                score_r += 0.35 + max(0.0, z - s_r_adj) * 1.0
-            score_b += max(0.0, (s_r_adj + 1.0) - z) * 0.25
-
-        # Effet B : boost BLANC + légère pénalité BLEU en zone médiane
-        if s_br_adj <= z < s_r_adj and allowed_white:
-            score_w *= WHITE_MIDZONE_BOOST
-            score_b *= BLUE_MIDZONE_PENALTY
-
-        # BOOST BLANC hors cœur d'hiver quand Z est modéré
-        if (
-            not coeur_hiver
-            and 0.3 <= z <= 1
-            and score_r < 0.15  # rouge quasi absent
-            and allowed_white
-        ):
-            if score_w < score_b:
-                score_w += (score_b - score_w) * 0.35
-
-    # Respect strict des contraintes calendrier + stock
-    if not allowed_red:
-        score_r = 0.0
-    if not allowed_white:
-        score_w = 0.0
-
-    # Filtre "EDF-like" sur le rouge : saison + historique d'usage
-    edf_red_factor = 1.0
-
-    # Profil saisonnier des jours rouges (basé sur l'historique EDF)
-    if d.month == 11:
-        edf_red_factor *= 0.7
-    elif d.month == 12:
-        if d.day < 10:
-            edf_red_factor *= 0.5
-        elif d.day < 20:
-            edf_red_factor *= 0.7
-        else:
-            edf_red_factor *= 1
-    elif d.month in (1, 2):
-        edf_red_factor *= 1.05
-    elif d.month == 3:
-        if d.day <= 15:
-            edf_red_factor *= 0.7
-        else:
-            edf_red_factor *= 0.4
-
- 
-    
-    # Ajustement en fonction du stock "attendu" de rouges (courbe cible non linéaire)
-    target_used_frac = red_target_used_fraction(d)
-    expected_red_used = RED_TOTAL * target_used_frac
-    expected_red_remaining = max(0.0, RED_TOTAL - expected_red_used)
-
-    #  pression réelle vs pression cible sur les jours éligibles restants ---
-    _, red_end = red_season_bounds(d)
-
-    # Jours "posables" restants (lun-ven hors fériés, dans la saison rouge)
-    eligible_left = count_red_eligible_days_left(d, red_end)
-    eligible_left = max(1, eligible_left)  # sécurité
-
-    # Pression réelle = combien de rouges il faut poser par jour éligible restant
-    pressure_real = red_rem / eligible_left
-
-    # Pression cible = combien de rouges il "devrait" rester (selon courbe) par jour éligible restant
-    pressure_target = expected_red_remaining / eligible_left
-
-    # Delta pression : >0 => on est en retard (trop de rouges pour trop peu de jours)
-    delta_pressure = pressure_real - pressure_target
-
-    # Cas extrême : plus de rouges que de jours éligibles => deadline immédiate
-    if red_rem > eligible_left:
-        delta_pressure = max(delta_pressure, 0.20)  # force un "retard" clair
-
-
-    # Périodes
-    debut_saison = (d.month == 11) or (d.month == 12 and d.day < 10)
-    coeur_hiver_local = ((d.month == 12 and d.day >= 10) or (d.month in (1, 2) and d.day <= 15))
-    fin_saison_local = (d.month == 2 and d.day >= 20) or (d.month == 3)
-
-    # delta_pressure > 0  => retard (il faut "poser" plus souvent)
-    # delta_pressure < 0  => avance (on a déjà trop consommé)
-    if debut_saison:
-        if delta_pressure > 0.03:
-            edf_red_factor *= 0.70   # on calme en début de saison même si retard léger
-        elif delta_pressure < -0.03:
-            edf_red_factor *= 0.85
-
-    elif coeur_hiver_local:
-        if delta_pressure > 0.03:
-            edf_red_factor *= 1.25
-        elif delta_pressure < -0.03:
-            edf_red_factor *= 0.80
-
-    elif fin_saison_local:
-        if delta_pressure > 0.02:
-            edf_red_factor *= 1.35   # fin de saison = deadline, donc boost plus net
-        elif delta_pressure < -0.03:
-            edf_red_factor *= 0.85
-
-    else:
-        if delta_pressure > 0.04:
-            edf_red_factor *= 1.08
-        elif delta_pressure < -0.04:
-            edf_red_factor *= 0.92
-
-    if red_rem < 4 and d.month not in (1, 2):
-        edf_red_factor *= 0.5
-
-    score_r *= edf_red_factor
-
-    # Samedi : jamais de rouge dans la décision finale
-    if wd == 5:
-        score_r = 0.0
-
-    # Petit biais sur le score bleu en fonction du stock de jours bleus restants
-    # Année Tempo = 01/09 -> 31/08
-    tempo_start = tempo_year_start(d)
-    tempo_end = tempo_year_end_inclusive(d)
-    total_days_tempo = (tempo_end - tempo_start).days + 1
-
-    if total_days_tempo > 0:
-        progress = (d - tempo_start).days / total_days_tempo
-        expected_blue_used = BLUE_TOTAL * progress
-        expected_blue_remaining = BLUE_TOTAL - expected_blue_used
-        delta_blue = blue_rem - expected_blue_remaining
-
-        if delta_blue > 20:
-            score_b *= 1.08
-        elif delta_blue < -20:
-            score_b *= 0.88
-
-    # ============================================================
-    # PATCH : Renforcer BLANC/ROUGE quand Z est élevé
-    # (version sur les scores, avant passage en probabilités)
-    # ============================================================
-    if z is not None:
-        # 1) Blanc renforcé quand Z dépasse s_br_adj + 0.3,
-        #    mais avant la zone franchement rouge (z < s_r_adj)
-        if (
-            allowed_white
-            and z >= s_br_adj + 0.3
-            and z < s_r_adj
-            and score_w < score_b
-        ):
-            # plus on se rapproche de s_r_adj, plus on donne sa chance au blanc
-            delta_base = max(0.0, s_r_adj - z)  # >= 0
-            delta = min(0.08, delta_base * 0.05)
-            score_w = max(score_w, score_b + delta)
-
-        # 2) Rouge : réveil progressif seulement très près du seuil rouge
-        if allowed_red:
-            # zone d'approche finale du seuil rouge : [s_r_adj - 0.07 ; s_r_adj]
-            start = s_r_adj - 0.12
-            if start <= z < s_r_adj and score_r < score_w:
-                # t: 0 -> 1 quand on approche s_r_adj
-                t = (z - start) / max(1e-6, (s_r_adj - start))
-                # rouge remonte un peu, mais ne dépasse pas le blanc en zone médiane
-                score_r = max(
-                    score_r,
-                    score_w * (0.45 + 0.55 * t)  # 0.45 -> 0.55 du blanc
-                )
-
-
-    # Passage en probabilités brutes
-    total = score_b + score_w + score_r
-    if total <= 0:
-        score_b, score_w, score_r = 0.7, 0.2, 0.1
-        total = 1.0
-
-    p_bleu = score_b / total
-    p_blanc = score_w / total
-    p_rouge = score_r / total
-
-    # ------------------------------------------------------------------
-    # Effet "stock" sur les trois couleurs (bleu / blanc / rouge)
-    # en fonction des jours restants dans l'année Tempo.
-    # ------------------------------------------------------------------
-    tempo_start = tempo_year_start(d)
-    tempo_end = tempo_year_end_inclusive(d)
-    total_days_tempo = (tempo_end - tempo_start).days + 1
-    days_left = max(1, total_days_tempo - j + 1)
-
-    # Estimation du stock bleu restant :
-    blue_remaining = max(0, blue_rem)
-
-    frac_blue = blue_remaining / days_left
-    frac_white = white_rem / days_left if days_left > 0 else 0.0
-    frac_red = red_rem / days_left if days_left > 0 else 0.0
-
-    # 1) Beaucoup de bleus à "caser"
-    if frac_blue > 0.8 and p_bleu < 0.8:
-        shift = min(0.05, p_blanc * 0.3)
-        if shift > 0:
-            p_bleu += shift
-            p_blanc -= shift
-
-    # 2) Peu de bleus restants
-    if frac_blue < 0.4:
-        shift = min(0.05, p_bleu * 0.4)
-        if shift > 0:
-            p_bleu -= shift
-            non_blue = p_blanc + p_rouge
-            if non_blue > 0:
-                p_blanc += shift * (p_blanc / non_blue)
-                p_rouge += shift * (p_rouge / non_blue)
-
-    # Ajustement hiver global (01/11–31/03) basé sur le stock de blancs
-    if d.month in (11, 12, 1, 2, 3) and z is not None and z < 9.5:
-        if white_rem >= 38:
-            if p_rouge > 0.0:
-                r_cut = p_rouge * 0.25
-                p_rouge -= r_cut
-                p_bleu += r_cut * 0.4
-                p_blanc += r_cut * 0.6
-
-            # Utilisation du seuil ajusté pour "près du bleu"
-            if z < s_br_adj + 0.5 and p_blanc > 0.45:
-                w_shift = min(0.08, p_blanc - 0.40)
-                if w_shift > 0:
-                    p_blanc -= w_shift
-                    p_bleu += w_shift
-
-            s = p_bleu + p_blanc + p_rouge
-            if s > 0:
-                p_bleu /= s
-                p_blanc /= s
-                p_rouge /= s
-
-        elif white_rem <= 10:
-            if p_bleu > 0.30:
-                b_shift = min(0.15, p_bleu - 0.25)
-                if b_shift > 0:
-                    p_bleu -= b_shift
-                    p_blanc += b_shift
-
-            s = p_bleu + p_blanc + p_rouge
-            if s > 0:
-                p_bleu /= s
-                p_blanc /= s
-                p_rouge /= s
-
-    # PATCH fin de saison (mi-février → mars)
-    if z is not None and ((d.month == 2 and d.day >= 15) or d.month == 3):
-        year_fs = red_season_bounds(d)[0].year  # année de début de saison rouge (01/11)
-
-        red_start_fs, red_end_fs = red_season_bounds(d)
-
-        if d <= red_start_fs:
-            red_progress_fs = 0.0
-        elif d >= red_end_fs:
-            red_progress_fs = 1.0
-        else:
-            red_progress_fs = (d - red_start_fs).days / (red_end_fs - red_start_fs).days
-
-        expected_red_used_fs = RED_TOTAL * red_progress_fs
-        expected_red_remaining_fs = RED_TOTAL - expected_red_used_fs
-
-        white_start_fs = dt.date(year_fs, 11, 1)
-        white_end_fs = dt.date(year_fs + 1, 4, 30)
-
-        if d <= white_start_fs:
-            white_progress_fs = 0.0
-        elif d >= white_end_fs:
-            white_progress_fs = 1.0
-        else:
-            white_progress_fs = (d - white_start_fs).days / (white_end_fs - white_start_fs).days
-
-        expected_white_used_fs = WHITE_TOTAL * white_progress_fs
-        expected_white_remaining_fs = WHITE_TOTAL - expected_white_used_fs
-
-        boosted_fs = False
-
-        if white_rem > expected_white_remaining_fs + 3:
-            p_blanc = max(p_blanc, 0.25)
-            boosted_fs = True
-
-        if (
-            red_rem > expected_red_remaining_fs + 2
-            and red_rem > 5
-            and allowed_red
-            and wd < 5
-        ):
-            p_rouge = max(p_rouge, 0.20)
-            boosted_fs = True
-
-        if boosted_fs:
-            s_fs = p_bleu + p_blanc + p_rouge
-            if s_fs > 0:
-                p_bleu /= s_fs
-                p_blanc /= s_fs
-                p_rouge /= s_fs
-
-
-    # PATCH bonus fin de saison (10 → 31 mars)
-    if d.month == 3 and d.day >= 10:
-        bonus = False
-        if white_rem > 3 and p_blanc is not None:
-            p_blanc = max(p_blanc, 0.30)
-            bonus = True
-        if red_rem > 5 and p_rouge is not None and allowed_red and wd < 5:
-            p_rouge = max(p_rouge, 0.22)
-            bonus = True
-        if bonus:
-            s_b = p_bleu + p_blanc + p_rouge
-            if s_b > 0:
-                p_bleu /= s_b
-                p_blanc /= s_b
-                p_rouge /= s_b
-
-    # BOOST ROUGE fin de saison (mars) quand Z > 0.8
-    if (
-        d.month == 3
-        and allowed_red
-        and wd < 5
-        and z is not None
-        and z >= 0.7
-    ):
-        add = min(0.12, (p_bleu + p_blanc) * 0.4)
-        if add > 0:
-            p_rouge += add
-            p_bleu -= add * 0.5
-            p_blanc -= add * 0.5
-
-        s = p_bleu + p_blanc + p_rouge
-        if s > 0:
-            p_bleu /= s
-            p_blanc /= s
-            p_rouge /= s
-
-    # ============================================================
-    # PATCH Z / coeur d'hiver : transfert BLEU/BLANC -> ROUGE
-    # quand la tension est forte (Z) sur jours ouvrés.
-    # ============================================================
-    if (
-        z is not None
-        and d.month in (12, 1, 2)   # coeur d'hiver
-        and wd < 5                  # lundi -> vendredi
-        and allowed_red
-        and red_rem > 0
-    ):
-        non_red = p_bleu + p_blanc
-
-        # 1) On calcule combien on peut transférer vers le rouge
-        if z >= 1.30:
-            max_shift = 0.30
-        elif z >= 1.00:
-            max_shift = 0.10
-        elif z >= 0.70:
-            max_shift = 0.05
-        else:
-            max_shift = 0.03
-
-        if max_shift > 0.0 and non_red > 0.0:
-            shift = min(max_shift, non_red * 0.5)
-
-            # On prélève sur bleu+blanc proportionnellement
-            p_bleu  -= shift * (p_bleu  / non_red)
-            p_blanc -= shift * (p_blanc / non_red)
-            p_rouge += shift
-
-            s_z = p_bleu + p_blanc + p_rouge
-            if s_z > 0:
-                p_bleu  /= s_z
-                p_blanc /= s_z
-                p_rouge /= s_z
-
-        # 2) Pour Z >= 1.2 : rouge ne doit plus être derrière bleu
-        if z >= 1.20 and p_rouge < p_bleu:
-            diff = (p_bleu - p_rouge) * 0.6
-            p_bleu  -= diff
-            p_rouge += diff
-
-            s_z2 = p_bleu + p_blanc + p_rouge
-            if s_z2 > 0:
-                p_bleu  /= s_z2
-                p_blanc /= s_z2
-                p_rouge /= s_z2
-
-        # 3) Plancher rouge dynamique selon Z (au lieu d'un plancher fixe)
-        floor_r = red_floor_from_z(z)
-
-        if floor_r > 0.0 and p_rouge < floor_r:
-            non_red = p_bleu + p_blanc
-            if non_red > 0:
-                add = min(floor_r - p_rouge, non_red * 0.4)
-                if add > 0:
-                    p_bleu  -= add * (p_bleu  / non_red)
-                    p_blanc -= add * (p_blanc / non_red)
-                    p_rouge += add
-
-            s_z3 = p_bleu + p_blanc + p_rouge
-            if s_z3 > 0:
-                p_bleu  /= s_z3
-                p_blanc /= s_z3
-                p_rouge /= s_z3
-
-
-    # BOOST ROUGE plein hiver dans la zone Z ≈ 1.25 –1.9
-    if (
-        z is not None
-        and coeur_hiver
-        and 1.25 <= z <= 1.9
-        and allowed_red
-        and wd < 5
-    ):
-        if p_rouge < p_blanc:
-            # rouge doit pouvoir dépasser blanc dans cette zone
-            diff = (p_blanc - p_rouge) * 0.45
-            p_rouge += diff
-            p_blanc -= diff
-
-    # ============================================================
-    # PATCH Z bas en plein coeur d'hiver :
-    # si la tension est faible (Z <= 0.6), rouge quasi nul,
-    # on penche légèrement vers BLANC plutôt que BLEU.
-    # ============================================================
-    if (
-        z is not None
-        and d.month in (12, 1, 2)
-        and wd < 5
-        and p_rouge < 0.05
-        and 0.0 <= z <= 0.6
-        and p_bleu > p_blanc
-    ):
-        gap = p_bleu - p_blanc
-        shift = min(gap * 0.5, 0.08)
-        if shift > 0:
-            p_bleu  -= shift
-            p_blanc += shift
-
-        s_l = p_bleu + p_blanc + p_rouge
-        if s_l > 0:
-            p_bleu  /= s_l
-            p_blanc /= s_l
-            p_rouge /= s_l
-
-     # BOOST BLEU global si pas de rouge (duel bleu/blanc)
-    # Désactivé en plein cœur d'hiver quand Z est déjà un peu élevé
-    if (
-        p_rouge == 0.0
-        and p_blanc > 0.55
-        and not (
-            coeur_hiver
-            and z is not None
-            and z >= 0.62   # à partir de là, on arrête d'aider le bleu
-        )
-    ):
-        if d.month in (11, 3):
-            base_boost = 0.2
-        else:
-            base_boost = 0.15
-
-        gap_nb = abs(p_blanc - p_bleu)
-        if gap_nb < 0.03:
-            boost_factor = base_boost * 0.7
-        else:
-            boost_factor = base_boost
-
-        surplus = p_blanc - 0.45
-        if surplus > 0:
-            shift = surplus * boost_factor
-            p_blanc -= shift
-            p_bleu += shift
-    # PRIOR samedi (après novembre)
-    if wd == 5 and p_rouge == 0.0:
-        total_nb = p_bleu + p_blanc
-        if total_nb > 0:
-            factor = 1.0 / total_nb
-            p_bleu *= factor
-            p_blanc *= factor
-
-        if d.month != 11:
-            # Hors novembre : on évite les samedis "extrêmes"
-            if p_bleu > 0.65:
-                exc = p_bleu - 0.65
-                p_bleu = 0.65
-                p_blanc += exc
-            elif p_blanc > 0.70:
-                exc = p_blanc - 0.70
-                p_blanc = 0.70
-                p_bleu += exc
-        else:
-            # Novembre : forte préférence structurelle pour le bleu,
-            # mais on évite l'effet "toujours 70/30".
-            frac_blue_local = blue_rem / days_left
-            frac_white_local = white_rem / days_left if days_left > 0 else 0.0
-
-            base_boost = 0.20
-            if frac_blue_local >= 0.6 and frac_white_local <= 0.25:
-                base_boost = 0.24
-
-            ideal_white_floor = 0.30
-            if p_blanc < ideal_white_floor:
-                deficit = ideal_white_floor - p_blanc
-                shift = min(base_boost, deficit * 0.6)
-                if shift > 0:
-                    p_blanc += shift
-                    p_bleu -= shift
-
-            if z is not None and z <= 5.3 and p_blanc > p_bleu:
-                gap = p_blanc - p_bleu
-                shift = gap * 0.7
-                p_blanc -= shift
-                p_bleu += shift
-
-        s2 = p_bleu + p_blanc + p_rouge
-
-        if s2 > 0:
-            p_bleu /= s2
-            p_blanc /= s2
-            p_rouge /= s2
-
-    # Sécurité : si du rouge traîne encore un samedi (au cas où)
-    if wd == 5 and p_rouge > 0.0:
-        p_rouge = 0.0
-        nb = p_bleu + p_blanc
-        if nb > 0:
-            factor = 1.0 / nb
-            p_bleu *= factor
-            p_blanc *= factor
-
-#    # PATCH A : rouge trop faible en plein hiver quand Z ≈ 1
-    if (
-        z is not None
-        and d.month in (12, 1, 2)
-        and wd < 5
-        and allowed_red
-        and z >= 1.10
-    ):
-        # On impose un plancher = max(p_blanc, p_rouge)
-        target = max(p_rouge, min(p_blanc, red_floor_from_z(z)))
-        if p_rouge < target:
-            diff = target - p_rouge
-            # on prélève moitié sur bleu, moitié sur blanc
-            take_b = diff * 0.5
-            take_w = diff * 0.3
-            if p_bleu >= take_b:
-                p_bleu -= take_b
-            if p_blanc >= take_w:
-                p_blanc -= take_w
-            p_rouge += diff
-
-        # Renormalisation
-        s = p_bleu + p_blanc + p_rouge
-        if s > 0:
-            p_bleu /= s
-            p_blanc /= s
-            p_rouge /= s
-
-    # PATCH B : Rouge minimal en novembre quand Z est élevé
-    if (
-        z is not None
-        and d.month == 11
-        and allowed_red
-        and z >= 0.75
-        and p_rouge < 0.10  # plancher rouge obligatoire
-    ):
-        add = 0.10 - p_rouge
-        non_red = p_bleu + p_blanc
-        if non_red > 0:
-            p_bleu  -= add * (p_bleu  / non_red)
-            p_blanc -= add * (p_blanc / non_red)
-        p_rouge += add
-
-        # Renormalisation
-        s = p_bleu + p_blanc + p_rouge
-        if s > 0:
-            p_bleu /= s
-            p_blanc /= s
-            p_rouge /= s
-
-    # PATCH C : Blanc minimal en novembre dès que Z > 0.2
-    if (
-        z is not None
-        and d.month == 11
-        and allowed_white
-        and z >= 0.20
-        and p_blanc < 0.35
-    ):
-        add = 0.35 - p_blanc
-        # on prend sur bleu uniquement
-        if p_bleu >= add:
-            p_bleu -= add
-            p_blanc += add
-
-        # renormalisation
-        s = p_bleu + p_blanc + p_rouge
-        if s > 0:
-            p_bleu /= s
-            p_blanc /= s
-            p_rouge /= s
-
-
-    # Choix de la couleur dominante
-    couleur = "bleu"
-    max_p = p_bleu
-    if p_blanc > max_p:
-        couleur = "blanc"
-        max_p = p_blanc
-    if p_rouge > max_p:
-        couleur = "rouge"
-        max_p = p_rouge
-
-    # Mise à jour des stocks
-    if couleur == "rouge":
-        red_rem = max(0, red_rem - 1)
-    elif couleur == "blanc":
-        white_rem = max(0, white_rem - 1)
-    else:  # bleu
-        blue_rem = max(0, blue_rem - 1)
-
-    return couleur, red_rem, white_rem, blue_rem, p_bleu, p_blanc, p_rouge
-
-
-
-def decide_color_with_wrappers_no_stock(d, z, j, red_rem, white_rem, blue_rem):
-    """
-    Wrapper qui:
-    - force bleu dimanche
-    - interdit rouge si non autorisé
-    - MAIS ne touche PAS aux stocks
-    """
-    couleur, _, _, _, pB, pW, pR = decide_color_with_probs(d, z, j, red_rem, white_rem, blue_rem)
-
-    if d.weekday() == 6:
-        return "bleu", 1.0, 0.0, 0.0
-
-    if couleur == "rouge" and not allowed("rouge", d):
-        pR = 0.0
-        s = pB + pW
-        if s <= 0:
-            pB, pW = 0.8, 0.2
-            s = 1.0
-        else:
-            pB /= s
-            pW /= s
-        couleur = "bleu" if pB >= pW else "blanc"
-
-    return couleur, pB, pW, pR
-
-
-def _confidence_label(score):
-    if score is None:
-        return "Indisponible"
-    if score >= 4.5:
-        return "Très forte"
-    if score >= 3.5:
-        return "Forte"
-    if score >= 2.5:
-        return "Moyenne"
-    if score >= 1.5:
-        return "Faible"
-    return "Très faible"
-
-def _compute_confidence_score(couleur, p_bleu, p_blanc, p_rouge, red_rem, white_rem, offset, gen_source=None):
-    if any(v is None for v in (p_bleu, p_blanc, p_rouge)):
-        return None
-
-    probs = {
-        "bleu": p_bleu,
-        "blanc": p_blanc,
-        "rouge": p_rouge,
-    }
-
-    ordered = sorted(probs.items(), key=lambda x: x[1], reverse=True)
-    (c1, p1), (c2, p2), (c3, p3) = ordered
-    gap = p1 - p2
-
-    raw = 0.0
-
-    # 1) Force de la couleur gagnante
-    if p1 >= 0.75:
-        raw += 3.0
-    elif p1 >= 0.65:
-        raw += 2.5
-    elif p1 >= 0.55:
-        raw += 2.0
-    elif p1 >= 0.48:
-        raw += 1.5
-    elif p1 >= 0.45:
-        raw += 1.2
-    else:
-        raw += 0.7
-
-    # 2) Écart gagnant / second
-    if gap >= 0.25:
-        raw += 1.0
-    elif gap >= 0.15:
-        raw += 0.5
-    elif gap >= 0.08:
-        raw += 0.0
-    elif gap >= 0.04:
-        raw -= 0.5
-    else:
-        raw -= 1.0
-
-    # 3) Distance temporelle (J+1 plus fiable que J+6)
-    if offset == 1:
-        raw += 1.5
-    elif offset == 2:
-        raw += 1.0
-    elif offset == 3:
-        raw += 0.5
-    elif offset == 5:
-        raw -= 0.5
-    elif offset >= 6:
-        raw -= 0.8
-
-    # 4) Effet saisonnier large
-    today = dt.date.today()
-    d = today + dt.timedelta(days=offset)
-    month = d.month
-    day = d.day
-    
-    # Dimanche : bleu certain → score 5
-    if couleur == "bleu" and (d.weekday() == 6):
-        return 5
-
-    if couleur == "rouge":
-        if month in (1, 2):
-            raw += 0.3
-        elif month in (12, 3):
-            raw += 0.0
-        elif month == 11:
-            raw -= 0.45
-        else:
-            raw -= 1.0
-
-    elif couleur == "blanc":
-        if month in (11, 12, 1, 2, 3):
-            raw += 0.1
-        elif month in (4, 10):
-            raw += 0.0
-        else:
-            raw -= 0.6
-
-    elif couleur == "bleu":
-        if month in (5, 6, 7, 8, 9):
-            raw += 0.4
-        elif month in (4, 10, 11):
-            raw += 0.1
-        elif month in (12, 1, 2, 3):
-            raw -= 0.1
-
-    # 4 bis) Affinage rouge (mois / jour / stock)
-    if couleur == "rouge":
-        if month == 11:
-            raw -= 0.4
-        elif month == 12:
-            if day < 10:
-                raw -= 0.3
-            elif day > 28:
-                if red_rem <= 6:
-                    raw -= 0.4
-                else:
-                    raw -= 0.1
-        elif month == 2:
-            if day > 25 and red_rem <= 8:
-                raw -= 0.5
-            elif day > 20 and red_rem <= 8:
-                raw -= 0.3
-        elif month == 3:
-            if day > 20 and red_rem <= 8:
-                raw -= 0.8
-            elif day > 15 and red_rem <= 8:
-                raw -= 0.5
-
-    # 5) Effet "stock restant" rouge / blanc
-
-    red_start, red_end = red_season_bounds(d)
-
-    if d <= red_start:
-        red_progress = 0.0
-    elif d >= red_end:
-        red_progress = 1.0
-    else:
-        red_progress = (d - red_start).days / (red_end - red_start).days
-
-    expected_red_used = RED_TOTAL * red_progress
-    expected_red_remaining = RED_TOTAL - expected_red_used
-    delta_red = red_rem - expected_red_remaining
-
-    if delta_red > 4 and couleur != "rouge":
-        raw -= 0.4
-    elif delta_red < -4 and couleur == "rouge":
-        raw -= 0.4
-    year = red_season_bounds(d)[0].year  # IX : année de saison (01/11)
-    white_start = dt.date(year, 11, 1)
-    white_end = dt.date(year + 1, 4, 30)
-
-    if d <= white_start:
-        white_progress = 0.0
-    elif d >= white_end:
-        white_progress = 1.0
-    else:
-        white_progress = (d - white_start).days / (white_end - white_start).days
-
-    expected_white_used = WHITE_TOTAL * white_progress
-    expected_white_remaining = WHITE_TOTAL - expected_white_used
-    delta_white = white_rem - expected_white_remaining
-
-    if delta_white > 6 and couleur == "bleu":
-        raw -= 0.3
-    if delta_white < -6 and couleur in ("blanc", "rouge"):
-        raw -= 0.3
-
-    # 5 bis) NOUVEAU : duel bleu/blanc serré ⇒ on baisse un peu la confiance
-    if (
-        p_rouge is not None and p_rouge < 0.15
-        and p_bleu is not None and p_blanc is not None
-    ):
-        if max(p_bleu, p_blanc) >= 0.45 and abs(p_bleu - p_blanc) < 0.15:
-            # Assez net pour trancher, mais historiquement c'est là
-            # que EDF peut basculer d'une couleur à l'autre.
-            raw -= 0.4
-
-    # 5 ter) Fiabilité des données ENR (impact fort sur J+4..J+6)
-    if gen_source in ("carryover_last_known", "estime_ratio_J+1"):
-        if offset >= 4:
-            raw -= 1.0   # gros doute : on recycle/estime l'ENR
-        elif offset == 3:
-            raw -= 0.6
-        else:
-            raw -= 0.3
-
-
-    # 6) Petit boost J+1 / J+2 si le modèle est assez net
-    if offset in (1, 2):
-        if p1 >= 0.46 and gap >= 0.03 and raw < 3.0:
-            raw += 0.5
-
-    # 7) Conversion en score 1..5
-    if raw <= 0.5:
-        score = 1          # Très faible
-    elif raw <= 1.5:
-        score = 2          # Faible
-    elif raw <= 2.5:
-        score = 3          # Moyenne
-    elif raw <= 3.5:
-        score = 4          # Forte
-    else:
-        score = 5          # Très forte
-       
-       
-    return score
-
-
-
-def _build_confidence_comment(couleur, p_bleu, p_blanc, p_rouge, score, offset):
-    probs = {
-        "bleu": p_bleu,
-        "blanc": p_blanc,
-        "rouge": p_rouge,
-    }
-
-    ordered = sorted(probs.items(), key=lambda x: (x[1] is None, x[1]), reverse=True)
-    (c1, p1), (c2, p2), (c3, p3) = ordered
-    if p1 is None or p2 is None:
-        return "Indice de confiance indisponible (données manquantes)."
-
-    gap = p1 - p2
-    
-    # Dimanche  : bleu certain
-    today = dt.date.today()
-    d = today + dt.timedelta(days=offset)
-    if couleur == "bleu" and (d.weekday() == 6):
-        return "Dimanche, bleu certain."
-
-
-    # Jour proche / moyen / lointain
-    if offset <= 2:
-        dist = "proche"
-    elif offset <= 3:
-        dist = "moyen"
-    else:
-        dist = "lointain"
-
-    cname = lambda c: c
-
-    # ------------------------------------------------------------------
-    # 0) Cas spéciaux : duel bleu/blanc et risque de rouge
-    # ------------------------------------------------------------------
-
-    # Duel bleu / blanc (rouge faible, deux couleurs proches)
-    if (
-        p_rouge is not None and p_rouge < 0.15
-        and p_bleu is not None and p_blanc is not None
-        and max(p_bleu, p_blanc) >= 0.45
-        and abs(p_bleu - p_blanc) < 0.15
-    ):
-        # on force un message "duel", quel que soit le score (2–4)
-        if score >= 3:
-            return f"Duel bleu/blanc :  avance {cname(c1)}."
-        else:
-            return "Duel bleu/blanc très serré, prévision sensible."
-
-    # Rouge non gagnant mais significatif → on le mentionne clairement
-    if couleur != "rouge" and p_rouge is not None and p_rouge >= 0.25:
-        if score >= 3:
-            return f"{cname(c1)} devant, mais risque rouge en embuscade."
-        else:
-            return "Risque rouge marqué, plusieurs scénarios restent ouverts."
-
-    # ------------------------------------------------------------------
-    # 1) Cas standards (inchangé, mais profite des nouveaux scores)
-    # ------------------------------------------------------------------
-
-    # score 5 : confiance très forte
-    if score == 5:
-        if dist == "proche":
-            return f"Jour proche, {cname(c1)} nettement probable."
-        elif dist == "moyen":
-            return f"Couleur clairement en tête, à surveiller."
-        else:
-            return f"Couleur en tête. Prévision lointaine."
-
-    # score 4 : confiance forte
-    if score == 4 or score == 4.5:
-        if dist == "proche":
-            return f"Jour proche : {cname(c1)} clairement favori."
-        elif dist == "moyen":
-            return f"Couleur en tête, à surveiller."
-        else:
-            return f"Prévision lointaine, une autre couleur reste crédible."
-
-    # score 3 : confiance moyenne
-    if score == 3 or score == 3.5:
-        if abs(gap) <= 0.15:
-            return f"Duel {cname(c1)}/{cname(c2)}, prévision sensible."
-        elif dist == "lointain":
-            return f"Jour éloigné, {cname(c1)} probable, bascule possible."
-        else:
-            return f"{cname(c1)} probable, mais bascule possible."
-
-    # score 2 : confiance faible
-    if score == 2 or score == 2.5:
-        if dist == "lointain":
-            return "Jour lointain, beaucoup d’incertitude."
-        elif abs(gap) <= 0.08:
-            return f"Écart faible : {cname(c2)} reste une vraie option."
-        else:
-            return f"Plusieurs scénarios restent ouverts."
-
-    # score 1 : confiance très faible
-    if dist == "lointain":
-        return f"Prévision très lointaine, fiabilité très faible."
-    else:
-        return f"Couleurs très proches, modèle hésitant."
-
-def apply_terminal_red_deadline_pressure(d, p_bleu: float, p_blanc: float, p_rouge: float, red_rem: int):
-    """
-    Pression terminale rouge liée à la date limite du 31/03.
-
-    Idée :
-    - si tous les jours éligibles restants doivent être rouges -> 100% rouge
-    - s'il ne reste qu'un seul "joker" non rouge -> rouge quasi certain
-    - sinon on ne touche à rien
-
-    Cette fonction doit être appelée EN DERNIER,
-    après shrink + météo + mask calendrier.
-    """
-    if red_rem <= 0:
-        return p_bleu, p_blanc, p_rouge, None
-
-    if not allowed("rouge", d):
-        return p_bleu, p_blanc, p_rouge, None
-
-    _, red_end = red_season_bounds(d)
-    eligible_left = count_red_eligible_days_left(d, red_end)
-
-    if eligible_left <= 0:
-        return p_bleu, p_blanc, p_rouge, {
-            "eligible_left": 0,
-            "red_rem": red_rem,
-            "slack": None,
-            "applied": "none_no_eligible_days"
-        }
-
-    # Nombre de jours non rouges encore "autorisés"
-    slack = eligible_left - red_rem
-
-    # Cas 1 : tous les jours restants doivent être rouges
-    if slack <= 0:
-        return 0.0, 0.0, 1.0, {
-            "eligible_left": eligible_left,
-            "red_rem": red_rem,
-            "slack": slack,
-            "applied": "force_100_red"
-        }
-
-    # Cas 2 : un seul joker non rouge
-    if slack == 1:
-        target_r = 0.96
-    # Cas 3 : deux jokers non rouges -> forte pression mais pas quasi-certaine
-    elif slack == 2:
-        target_r = 0.88
-    else:
-        return p_bleu, p_blanc, p_rouge, {
-            "eligible_left": eligible_left,
-            "red_rem": red_rem,
-            "slack": slack,
-            "applied": "none"
-        }
-
-    # On impose un plancher rouge terminal
-    if p_rouge < target_r:
-        non_red = p_bleu + p_blanc
-        if non_red <= 0:
-            p_bleu, p_blanc, p_rouge = 0.0, 0.0, 1.0
-        else:
-            add = target_r - p_rouge
-            p_bleu -= add * (p_bleu / non_red)
-            p_blanc -= add * (p_blanc / non_red)
-            p_rouge += add
-
-    s = p_bleu + p_blanc + p_rouge
-    if s > 0:
-        p_bleu /= s
-        p_blanc /= s
-        p_rouge /= s
-
-    return p_bleu, p_blanc, p_rouge, {
-        "eligible_left": eligible_left,
-        "red_rem": red_rem,
-        "slack": slack,
-        "target_r": target_r,
-        "applied": "red_floor"
-    }
-
-def build_forecast(real_j1=REAL_J1):
-    token = get_token()
-
-    cons_short = get_short_term(token)
-    cons_week = get_weekly(token)
-    gen = get_generation(token)
-
-    try:
-        annual = get_annual(token)
-        daily_data = build_daily_data_from_annual_forecasts(annual)
-        daily_data = sorted(daily_data, key=lambda x: x["date"])
-    except Exception:
-        daily_data = []
-
-    today = dt.date.today()
-
-    # --- Température nationale prévue (Tmoy) ---
-    meteo_error = None
-
-    if ENABLE_METEO:
-        try:
-            tnat_map = compute_national_tmoy(today, offsets=range(1, 4))
-        except Exception as e:
-            tnat_map = {}
-            meteo_error = repr(e)
-            print("Open-Meteo ERROR:", meteo_error, file=sys.stderr)
-    else:
-        tnat_map = {}
-        meteo_error = "meteo_disabled_manual"
-
-    red_rem = RED_REMAINING
-    white_rem = WHITE_REMAINING
-    blue_rem = BLUE_REMAINING
-
-    days = []
-    last_gen_val = None
-
-    for offset in range(1, 7):
-        d = today + dt.timedelta(days=offset)
-
-        # init par jour (évite pollution)
-        meteo_bias = 0.0
-
-        conso = cons_short.get(d) or cons_week.get(d)
-
-        gen_val = gen.get(d)
-        gen_source = None
-
-        if gen_val is not None:
-            gen_source = "RTE"
-            last_gen_val = gen_val
-
-        if gen_val is None and conso is not None and offset in (2, 3):
-            d_j1 = today + dt.timedelta(days=1)
-            conso_j1 = cons_short.get(d_j1) or cons_week.get(d_j1)
-            gen_j1 = gen.get(d_j1)
-
-            if conso_j1 is not None and gen_j1 is not None and conso_j1 > 0:
-                ratio = gen_j1 / conso_j1
-                ratio = max(0.0, min(0.5, ratio))
-                gen_val = conso * ratio
-                gen_source = "estime_ratio_J+1"
-                last_gen_val = gen_val
-
-        if gen_val is None and conso is not None and last_gen_val is not None:
-            gen_val = last_gen_val
-            gen_source = gen_source or "carryover_last_known"
-
-        T_nat = tnat_map.get(d)
-        T_norm = rte_norm_temp(d)
-        delta_T = (T_nat - T_norm) if (T_nat is not None and T_norm is not None) else None
-
-        entry = {
-            "offset": offset,
-            "date": d,
-            "conso": conso,
-            "gen": gen_val,
-            "gen_source": gen_source,
-            "T_nat": T_nat,
-            "T_norm": T_norm,
-            "delta_T": delta_T,
-            "meteo_bias": 0.0,
-        }
-
-        if ENABLE_DEBUG:
-            entry["debug"] = {
-                "annual_days_count": len(daily_data) if daily_data else 0,
-                "annual_first_date": daily_data[0]["date"] if daily_data else None,
-                "annual_last_date": daily_data[-1]["date"] if daily_data else None,
-                "annual_sample_dates": (
-                    [x.get("date") for x in (daily_data[:3] + daily_data[-3:])] if daily_data else None
-                ),
-                "z_try": None,
-                "z_error": None,
-                "z_error_type": None,
-                "meteo_error": meteo_error,
-            }
-
-        if conso is not None:
-            c_net = conso - gen_val if gen_val is not None else conso
-            entry["c_net"] = c_net
-
+def parse_tempo(payload):
+    out={}
+    for block in blocks(payload,'tempo_like_calendars'):
+        for row in values(block):
+            v=str(row.get('value','')).lower()
+            v={'blue':'bleu','white':'blanc','red':'rouge'}.get(v,v)
+            if v in COLORS:
+                day=parse_ts(row['start_date']).astimezone(PARIS).date()
+                out[day]=v
+    return out
+
+
+def quarter_series(payload,key,now,kind=None):
+    """Deduplicate forecasts by update; expand intervals to 15-minute UTC slots."""
+    out={}
+    for block in blocks(payload,key):
+        typ=block.get('type')
+        if key=='forecasts' and typ not in ('D-1','D-2','D-3','ID','CURRENT'): continue
+        if key=='short_term' and typ not in (None,'D-1','D-2','D-3','ID','CURRENT'): continue
+        if kind and block.get('production_type')!=kind: continue
+        for row in values(block):
             try:
-                if daily_data:
-                    if ENABLE_DEBUG and entry["debug"] is not None:
-                        entry["debug"]["z_try"] = "annual_forecast"
-                        z_raw, z_calib = compute_z_rte_like(
-                            d, c_net, daily_data, window_days=365, return_debug=True
-                        )
-                        entry["debug"]["z_calibration"] = z_calib
-                    else:
-                        z_raw = compute_z_rte_like(
-                            d, c_net, daily_data, window_days=365, return_debug=False
-                        )
-                    z_source = "annual_forecast"
-                else:
-                    if ENABLE_DEBUG and entry["debug"] is not None:
-                        entry["debug"]["z_try"] = "fallback_std_no_daily_data"
-                    z_raw = compute_z(c_net)
-                    z_source = "fallback_std"
-            except Exception as e:
-                if ENABLE_DEBUG and entry["debug"] is not None:
-                    entry["debug"]["z_error"] = repr(e)
-                    entry["debug"]["z_error_type"] = type(e).__name__
-                z_raw = compute_z(c_net)
-                z_source = "fallback_std"
+                a,b=parse_ts(row['start_date']),parse_ts(row['end_date'])
+                v=float(row['value']); u=parse_ts(row.get('updated_date') or block.get('updated_date')) if (row.get('updated_date') or block.get('updated_date')) else dt.datetime.min.replace(tzinfo=UTC)
+                if not math.isfinite(v) or v<0 or u>now or not dt.timedelta(0)<b-a<=dt.timedelta(hours=1): continue
+                if a.minute%15 or a.second or b.minute%15 or b.second: continue
+            except (KeyError,ValueError,TypeError): continue
+            rank=(u,{'D-1':4,'D-2':3,'D-3':2,'CURRENT':5,'ID':6}.get(typ,0))
+            while a<b:
+                if a not in out or rank>out[a][0]: out[a]=(rank,v)
+                a+=STEP
+    return {a:v for a,(_,v) in out.items()}
 
-            entry["z"] = z_raw
-            entry["z_source"] = z_source
-            entry["z_raw"] = z_raw
 
-        days.append(entry)
-
-    result = {}
-
-    for entry in days:
-        d = entry["date"]
-        offset = entry["offset"]
-        label = f"J+{offset}"
-
-        conso = entry.get("conso")
-        gen_val = entry.get("gen")
-        gen_source = entry.get("gen_source")
-        meteo_bias = 0.0
-        red_deadline_debug = None
-
-        # Snapshot stocks AVANT calcul du jour
-        red0, white0, blue0 = red_rem, white_rem, blue_rem
-
-        if conso is None:
-            result[label] = {
-                "date": d.isoformat(),
-                "couleur": "inconnue",
-                "modele": None,
-                "c_mw": None,
-                "gen_mw": round(gen_val, 1) if gen_val is not None else None,
-                "gen_source": gen_source,
-                "c_net_mw": None,
-                "z": None,
-                "red_remaining": red_rem,
-                "white_remaining": white_rem,
-                "blue_remaining": blue_rem,
-                "p_bleu": None,
-                "p_blanc": None,
-                "p_rouge": None,
-                "confidence_score": None,
-                "confidence_label": "Indisponible",
-                "confidence_comment": "Indice de confiance indisponible (données manquantes).",
-                "z_source": entry.get("z_source"),
-                "T_nat": entry.get("T_nat"),
-                "T_norm": entry.get("T_norm"),
-                "delta_T": entry.get("delta_T"),
-                "meteo_bias": 0.0,
-                "red_deadline_pressure": red_deadline_debug,
-                "z_raw": round(entry.get("z_raw"), 3) if entry.get("z_raw") is not None else None,
-                **({"z_debug": entry.get("debug")} if ENABLE_DEBUG else {}),
-            }
-            continue
-
-        c_net = entry["c_net"]
-        z = entry["z"]
-        j = day_index(d)
-
-        # 1) modèle de base (SANS décrément stocks)
-        couleur_modele, p_bleu, p_blanc, p_rouge = decide_color_with_wrappers_no_stock(
-            d, z, j, red0, white0, blue0
-        )
-        couleur = couleur_modele
-
-        # 2) shrink / mask (peut changer couleur, mais pas stocks)
-        if offset == 2:
-            p_bleu, p_blanc, p_rouge = shrink_probs(p_bleu, p_blanc, p_rouge, 0.20)
-            p_bleu, p_blanc, p_rouge = mask_probs_by_calendar(d, p_bleu, p_blanc, p_rouge)
-            couleur = base_decision_from_probs(p_bleu, p_blanc, p_rouge)
-        elif offset == 3:
-            p_bleu, p_blanc, p_rouge = shrink_probs(p_bleu, p_blanc, p_rouge, 0.35)
-            p_bleu, p_blanc, p_rouge = mask_probs_by_calendar(d, p_bleu, p_blanc, p_rouge)
-            couleur = base_decision_from_probs(p_bleu, p_blanc, p_rouge)
-        elif offset in (4, 5, 6):
-            base_lam = {4: 0.40, 5: 0.50, 6: 0.60}[offset]
-            extra = 0.10 if gen_source in ("carryover_last_known", "estime_ratio_J+1") else 0.0
-            lam = min(0.75, base_lam + extra)
-            p_bleu, p_blanc, p_rouge = shrink_probs(p_bleu, p_blanc, p_rouge, lam)
-            p_bleu, p_blanc, p_rouge = mask_probs_by_calendar(d, p_bleu, p_blanc, p_rouge)
-            couleur = base_decision_from_probs(p_bleu, p_blanc, p_rouge)
-
-        # 3) météo (peut changer couleur)
-        delta_T = entry.get("delta_T")
-        p_bleu, p_blanc, p_rouge, meteo_bias = apply_meteo_shift_probs(
-            p_bleu, p_blanc, p_rouge, delta_T
-        )
-        p_bleu, p_blanc, p_rouge = mask_probs_by_calendar(d, p_bleu, p_blanc, p_rouge)
-
-        # 3 bis) pression terminale rouge liée à la deadline 31/03
-        p_bleu, p_blanc, p_rouge, red_deadline_debug = apply_terminal_red_deadline_pressure(
-            d, p_bleu, p_blanc, p_rouge, red0
-        )
-        p_bleu, p_blanc, p_rouge = mask_probs_by_calendar(d, p_bleu, p_blanc, p_rouge)
-
-        couleur = base_decision_from_probs(p_bleu, p_blanc, p_rouge)
-
-        # 4) override J+1 après 06:45
-        now_time = dt.datetime.now().time()
-        if offset == 1 and real_j1 in ("bleu", "blanc", "rouge") and now_time >= dt.time(6, 45):
-            couleur = real_j1
-            p_bleu = 1.0 if couleur == "bleu" else 0.0
-            p_blanc = 1.0 if couleur == "blanc" else 0.0
-            p_rouge = 1.0 if couleur == "rouge" else 0.0
-
-            # Décrément stocks UNE FOIS avec la couleur finale
-            red_rem, white_rem, blue_rem = red0, white0, blue0
-            if couleur == "rouge":
-                red_rem = max(0, red_rem - 1)
-            elif couleur == "blanc":
-                white_rem = max(0, white_rem - 1)
-            else:
-                blue_rem = max(0, blue_rem - 1)
-
-            result[label] = {
-                "date": d.isoformat(),
-                "couleur": couleur,
-                "modele": "override_RTE",
-                "c_mw": round(conso, 1),
-                "gen_mw": round(gen_val, 1) if gen_val is not None else None,
-                "gen_source": gen_source,
-                "c_net_mw": round(c_net, 1),
-                "z": round(z, 3),
-                "red_remaining": red_rem,
-                "white_remaining": white_rem,
-                "blue_remaining": blue_rem,
-                "p_bleu": p_bleu,
-                "p_blanc": p_blanc,
-                "p_rouge": p_rouge,
-                "confidence_score": 5,
-                "confidence_label": "Très forte",
-                "confidence_comment": "Couleur J+1 confirmée par RTE.",
-                "z_source": entry.get("z_source"),
-                "T_nat": entry.get("T_nat"),
-                "T_norm": entry.get("T_norm"),
-                "delta_T": entry.get("delta_T"),
-                "meteo_bias": meteo_bias,
-                "red_deadline_pressure": red_deadline_debug,
-                "z_raw": round(entry.get("z_raw"), 3) if entry.get("z_raw") is not None else None,
-                **({"z_debug": entry.get("debug")} if ENABLE_DEBUG else {}),
-            }
-            continue
-
-        # Décrément stocks UNE FOIS avec la couleur finale
-        red_rem, white_rem, blue_rem = red0, white0, blue0
-        if couleur == "rouge":
-            red_rem = max(0, red_rem - 1)
-        elif couleur == "blanc":
-            white_rem = max(0, white_rem - 1)
-        else:
-            blue_rem = max(0, blue_rem - 1)
-
-        # Score confiance
-        score = _compute_confidence_score(
-            couleur, p_bleu, p_blanc, p_rouge, red_rem, white_rem, offset, gen_source
-        )
-        conf_label = _confidence_label(score)
-        conf_comment = _build_confidence_comment(couleur, p_bleu, p_blanc, p_rouge, score, offset)
-
-        result[label] = {
-            "date": d.isoformat(),
-            "couleur": couleur,
-            "modele": "modele_interne",
-            "c_mw": round(conso, 1),
-            "gen_mw": round(gen_val, 1) if gen_val is not None else None,
-            "gen_source": gen_source,
-            "c_net_mw": round(c_net, 1),
-            "z": round(z, 3),
-            "red_remaining": red_rem,
-            "white_remaining": white_rem,
-            "blue_remaining": blue_rem,
-            "p_bleu": round(p_bleu, 3),
-            "p_blanc": round(p_blanc, 3),
-            "p_rouge": round(p_rouge, 3),
-            "confidence_score": score,
-            "confidence_label": conf_label,
-            "confidence_comment": conf_comment,
-            "z_source": entry.get("z_source"),
-            "T_nat": entry.get("T_nat"),
-            "T_norm": entry.get("T_norm"),
-            "delta_T": entry.get("delta_T"),
-            "meteo_bias": meteo_bias,
-            "red_deadline_pressure": red_deadline_debug,
-            "z_raw": round(entry.get("z_raw"), 3) if entry.get("z_raw") is not None else None,
-            **({"z_debug": entry.get("debug")} if ENABLE_DEBUG else {}),
-        }
-
+def hourly(series,day):
+    """Complete hours only, including 23/25-hour DST days."""
+    a=midnight(day).astimezone(UTC); end=midnight(day+dt.timedelta(days=1)).astimezone(UTC); result={}
+    while a<end:
+        q=[series.get(a+i*STEP) for i in range(4)]
+        if all(x is not None for x in q): result[a]=sum(q)/4
+        a+=dt.timedelta(hours=1)
     return result
 
 
-if __name__ == "__main__":
+def daily_metrics(today,short,week,gen,now,enr_weather=None):
+    s=quarter_series(short,'short_term',now); w=quarter_series(week,'weekly_forecasts',now)
+    g={k:quarter_series(gen,'forecasts',now,k) for k in GEN_TYPES}
+    # Legacy API WIND is accepted only when the split wind series is absent.
+    if not g['WIND_ONSHORE'] and not g['WIND_OFFSHORE']:
+        wind=quarter_series(gen,'forecasts',now,'WIND')
+        if wind: g={'WIND':wind,'SOLAR':g['SOLAR']}
+    last_profiles=[]; out={}; net_hours={}
+    weather_series=(enr_weather or {}).get('series',{})
+    # Legacy unsplit WIND is not compatible with per-component weather merging.
+    if set(g)!=set(GEN_TYPES): weather_series={}
+    # RTE national wind/solar for tomorrow may not be published in the morning.
+    # Seed from the latest complete national profiles already in the response,
+    # including today. CPC / cogeneration must never be used as national ENR.
+    for day in date_range(today-dt.timedelta(days=2),today+dt.timedelta(days=8)):
+        start=midnight(day).astimezone(UTC); end=midnight(day+dt.timedelta(days=1)).astimezone(UTC)
+        expected=int((end-start).total_seconds()/3600)
+        hours=[start+dt.timedelta(hours=i) for i in range(expected)]
+        ch=hourly({**w,**s},day); gh={k:hourly(v,day) for k,v in g.items()}
+        common=set.intersection(*(set(v) for v in gh.values())) if gh else set()
+        direct={t:sum(v[t] for v in gh.values()) for t in common}
+        source='RTE' if len(direct)==expected else 'missing'
+        profile=direct.copy(); profile_dates=[]; weather_hours=0; persistence_hours=0
+        component_sources={k: {'RTE':len(gh[k]),'meteo':0} for k in gh}
+        if source=='RTE':
+            # Average repeated local hours on the autumn clock-change day.
+            local=defaultdict(list)
+            for t,v in direct.items(): local[t.astimezone(PARIS).hour].append(v)
+            last_profiles.append((day,{h:sum(v)/len(v) for h,v in local.items()}))
+        if day<=today: continue
+        if source!='RTE':
+            # Build a complete national hour, preferring official RTE per component.
+            for t in hours:
+                if t in profile: continue
+                vals={k:gh[k].get(t,weather_series.get(k,{}).get(t)) for k in gh}
+                if all(valid_weather(v) for v in vals.values()):
+                    profile[t]=sum(vals.values()); weather_hours+=1
+                    for k in gh:
+                        if t not in gh[k]: component_sources[k]['meteo']+=1
+            # Never recycle an estimated day as if it were an official profile.
+            recent=[(d,p) for d,p in last_profiles if (day-d).days<=8][-3:]
+            by_hour=defaultdict(list)
+            for d,p in recent:
+                for h,v in p.items(): by_hour[h].append(v)
+            for t in hours:
+                h=t.astimezone(PARIS).hour
+                if t not in profile and by_hour[h]:
+                    profile[t]=sum(by_hour[h])/len(by_hour[h]); persistence_hours+=1
+            if len(profile)==expected:
+                source='estime_meteo_ENR' if weather_hours and not persistence_hours else 'estime_mixte_ENR' if weather_hours else 'estime_profil_horaire_ENR'
+                if persistence_hours: profile_dates=[d.isoformat() for d,p in recent]
+        complete=len(ch)==expected and len(profile)==expected and set(ch)==set(profile)
+        net={t:ch[t]-profile[t] for t in ch if t in profile}
+        net_hours.update(net)
+        if not complete: net={}
+        out[day]={'conso':sum(ch.values())/len(ch) if len(ch)==expected else None,
+                  'gen':sum(profile.values())/len(profile) if len(profile)==expected else None,
+                  'net':sum(net.values())/len(net) if net else None,'peak':max(net.values()) if net else None,
+                  'gen_source':source,'gen_profile_dates':profile_dates,'gen_rte_hours':len(direct),'gen_weather_hours':weather_hours,'gen_persistence_hours':persistence_hours,'gen_component_sources':component_sources,'hours':len(ch),'matched_hours':len(net),'expected_hours':expected}
+    # White days use the tariff window 06:00–06:00, not the PP calendar day.
+    for day,m in out.items():
+        a=dt.datetime.combine(day,dt.time(6),PARIS).astimezone(UTC)
+        end=dt.datetime.combine(day+dt.timedelta(days=1),dt.time(6),PARIS).astimezone(UTC)
+        hours=int((end-a).total_seconds()/3600)
+        vals=[net_hours.get(a+dt.timedelta(hours=i)) for i in range(hours)]
+        m['net_tempo']=sum(vals)/hours if all(v is not None for v in vals) else None
+        m['tempo_hours']=sum(v is not None for v in vals)
+        m['tempo_expected_hours']=hours
+    return {d:m for d,m in out.items() if d<=today+dt.timedelta(days=6)}
+
+
+def quantile(vals,p):
+    s=sorted(vals); i=p*(len(s)-1); a=int(i); return s[a]+(s[min(a+1,len(s)-1)]-s[a])*(i-a)
+
+
+def annual_daily(payloads):
+    out={}
+    for payload in payloads:
+        for block in blocks(payload,'annual_forecasts'):
+            for row in values(block):
+                try:
+                    day=parse_ts(row['start_date']).astimezone(PARIS).date()
+                    v=row.get('average_load_monday_to_sunday') or row.get('average_load_saturday_to_friday')
+                    if isinstance(v,dict): v=v.get('value')
+                    if v is None: continue
+                    v=float(v)
+                    if not math.isfinite(v) or v<=0: continue
+                    for i in range(7): out[day+dt.timedelta(days=i)]=v
+                except (KeyError,TypeError,ValueError): continue
+    return out
+
+
+def white_z(d,net,annual):
+    if net is None: return None,None
+    history=[v for day,v in annual.items() if 0<(d-day).days<=365]
+    if len(history)>=30:
+        a,b=quantile(history,.4),quantile(history,.8)
+        if b-a>1: return (net-a)/(b-a),'annual_forecast'
+    return (net-46050)/2160,'fallback_std'
+
+
+def sigmoid(x):
+    return 1/(1+math.exp(-max(-60,min(60,x))))
+
+
+def white_threshold(d,red,white):
+    j=(d-season_start(d)).days+1
+    return 4.00-.015*j-.026*(red+white)-.30
+
+
+def white_conditional(d,z,red,white,blue,offset,delta=None):
+    if d.weekday()==6 or white<=0: return 0.
+    if blue<=0: return 1.
+    # White apurement: all remaining non-Sundays must be white if the
+    # white stock equals the number of eligible slots (unless a red takes one).
+    end=dt.date(season_start(d).year+1,9,1)
+    eligible_white=sum(x.weekday()!=6 for x in date_range(d,end))
+    if white>=eligible_white: return 1.
+    if z is None: return None
+    p=sigmoid((z-white_threshold(d,red,white))/.45)
+    lam=min(.5,(offset-1)*.09)
+    p=(1-lam)*p+lam*.5
+    if delta is not None:
+        strength=0 if abs(delta)<.5 else .03 if abs(delta)<1.5 else .06 if abs(delta)<3 else .09
+        p+=strength if delta<0 else -strength
+    return min(1,max(0,p))
+
+
+def white_bellman_bonus(d,z,red,white,blue,offset,peak,threshold,base):
+    """Conditional boost, not an RTE rule. Never alters PP/red probability."""
+    if (not ENABLE_WHITE_BELLMAN or base is None or not 0<base<1 or
+        z is None or peak is None or threshold is None or
+        not 0<threshold<math.inf or d.weekday()==6 or white<=0 or blue<=0):
+        return 0.
+    # Proximity saturates above threshold in the non-red branch; a finite
+    # threshold is mandatory. Z gates the bonus to avoid a narrow peak alone.
+    approach=max(0.,min(1.,(peak/threshold-WHITE_BELLMAN_START)/(1-WHITE_BELLMAN_START)))
+    gate=max(0.,min(1.,(z-white_threshold(d,red,white)+.75)/.75))
+    reliability=1/(1+.15*(offset-1))
+    return (1-base)*WHITE_BELLMAN_MAX*approach*gate*reliability
+
+
+def red_probability(peak,threshold,offset,gen_source):
+    if threshold==math.inf: return 0.
+    if threshold==0: return 1.
+    if threshold is None or peak is None: return None
+    sigma=max(1000.,abs(peak)*SIGMA[offset])
+    if gen_source!='RTE': sigma=math.hypot(sigma,4000.)
+    # Continuous proxy for P(future decision forecast > threshold).
+    return .5*math.erfc((threshold-peak)/(sigma*math.sqrt(2)))
+
+
+def number(v,n=1): return round(v,n) if v is not None and math.isfinite(v) else None
+
+
+def threshold_json(v): return 'Infinity' if v==math.inf else v
+
+
+def known_pp(signals,day): return signals.get(day,(None,None))[0]
+
+
+def late_pp(day,record):
+    if not record or not record[0] or day>=dt.date(2027,11,1): return False
+    return record[1].astimezone(PARIS)>=dt.datetime.combine(day-dt.timedelta(days=1),dt.time(10,30),PARIS)
+
+
+def confidence(probs,offset,source,gen_source,uncertain):
+    if probs is None: return None,'Indisponible','Données insuffisantes pour prévoir les couleurs.'
+    if source=='override_RTE': return 5,'Très forte','Couleur Tempo publiée.'
+    p=max(probs); score=5 if p>=.9 else 4 if p>=.75 else 3 if p>=.55 else 2 if p>=.4 else 1
+    if source=='PP_OFFICIAL' and probs[2]==1 and not uncertain: score=5
+    elif source=='PP_MATRIX_CONSTRAINT' and p==1 and not uncertain: score=5
+    else:
+        score=max(1,score-(offset>=4)-(gen_source!='RTE')-bool(uncertain))
+    return score,('Très faible','Faible','Moyenne','Forte','Très forte')[score-1], 'Probabilités indicatives, non calibrées.'
+
+
+def forecast(today,stocks,metrics,signals,tempo,thresholds,annual=None,weather=None,signal_ok=True,errors=None):
+    annual=annual or {}; weather=weather or {}; errors=list(errors or [])
+    red,white,blue=stocks; pp0=22-red
+    sy=season_start(today); expected_days=(dt.date(sy.year+1,9,1)-today).days-1
+    if sum(stocks)!=expected_days: errors.append(f'Somme des stocks Tempo ({sum(stocks)}) différente des jours après aujourd’hui ({expected_days}) : vérifier si le capteur inclut aujourd’hui ou demain.')
+    start=pp_start(today+dt.timedelta(days=1)); past=[d for d in date_range(start,today+dt.timedelta(days=1)) if eligible(d)] if today.month in TUNNEL else []
+    if today.month not in TUNNEL:
+        pp0=0; pp_stock_source='outside_PP_season'
+    elif signal_ok and all(d in signals for d in past):
+        pp0=sum(known_pp(signals,d) is True for d in past); pp_stock_source='PP_history'
+        if pp0!=22-red: errors.append('Stock PP différent du stock Tempo : suivi séparé (vérifier date de référence des capteurs).')
+    else: pp_stock_source='Tempo_proxy'; errors.append('Historique PP incomplet : stock PP estimé à partir du stock Tempo.')
+    if not 0<=pp0<=22: raise ValueError('Stock PP incohérent')
+    states={(pp0,red,white,blue):1.}; result={}; unknown_prior=False
+    displayed=[red,white,blue]; prev_start=season_start(today)
+    for offset in range(1,7):
+        d=today+dt.timedelta(days=offset); m=metrics.get(d,{}); peak=m.get('peak'); net=m.get('net'); net_tempo=m.get('net_tempo',net); white_net=net_tempo if net_tempo is not None else net; gen_source=m.get('gen_source','missing')
+        if season_start(d)!=prev_start:
+            n=(dt.date(d.year+1,9,1)-dt.date(d.year,9,1)).days
+            states={(0,22,43,n-65):1.}; displayed=[22,43,n-65]; unknown_prior=False; prev_start=season_start(d)
+        if (d.month,d.day)==(11,1):
+            reset=defaultdict(float)
+            for (_,r,w,b),p in states.items(): reset[(0,r,w,b)]+=p
+            states=dict(reset)
+        z,z_source=white_z(d,white_net,annual); tnat,tnorm=weather.get(d,(None,None)); delta=tnat-tnorm if tnat is not None and tnorm is not None else None
+        official=tempo.get(d); pp=known_pp(signals,d); late=late_pp(d,signals.get(d)); notes=[]
+        if gen_source in ('estime_meteo_ENR','estime_mixte_ENR'): notes.append('ENR estimees par modele meteo regional non calibre ; incertitude majoree.')
+        if gen_source in ('estime_profil_horaire_ENR','estime_mixte_ENR'): notes.append('ENR estimées à partir de profils nationaux RTE antérieurs ; incertitude majorée.')
+        if net_tempo is None and net is not None: notes.append('Blanc : moyenne 00h–24h utilisée faute de fenêtre 06h–06h complète.')
+        if pp is True and not eligible(d): notes.append('Signal PP en dehors du calendrier attendu : vérifier la source.')
+        if late and official is None: notes.append('PP publié/mis à jour après 10h30 J-1 : correspondance Tempo non certaine.')
+        totals=[0.,0.,0.]; nxt=defaultdict(float); reasons=Counter(); diag=[]; missing=False; pp_missing=False; red_missing=False; pp_total=0.; p_early=0.; early_known=True; white_bonus_mass=0.; nonred_mass=0.
+        for (used,r,w,b),weight in states.items():
+            t,reason=thresholds.get(d,used); t2,reason2=thresholds.get(d,used,2)
+            pr=red_probability(peak,t,offset,gen_source); pe=red_probability(peak,t2,offset,gen_source)
+            # Already announced future PP days reserve places in the current monthly cap.
+            reserved=sum(1 for x,rec in signals.items() if x>d and x.year==d.year and x.month==d.month and rec[0])
+            if pp is not True and d.month in TUNNEL and used+reserved>=TUNNEL[d.month][1]: pr=0.; reason='RESERVED_PP_CAP'
+            if pp is not None: pr=float(pp); reason='PP_OFFICIAL'
+            elif official=='rouge': pr=1.; reason='TEMPO_RED_PP_PROXY'
+            elif official in ('bleu','blanc'):
+                pr=0.; reason='TEMPO_NON_RED_PP_PROXY'
+            if pr is None: missing=True; pp_missing=True; red_missing=True; pr=.5 # propagation only; today's probabilities withheld
+            if pe is None: early_known=False
+            else: p_early+=weight*pe
+            pp_total+=weight*pr; reasons[reason]+=weight
+            diag.append({'pp_used':used,'weight':round(weight,6),'threshold_j1_mw':threshold_json(t),'threshold_j2_mw':threshold_json(t2),'reason':reason,'crosses_j1':(peak>t if peak is not None and t is not None else None),'crosses_j2':(peak>t2 if peak is not None and t2 is not None else None)})
+            for is_pp,pp_weight in ((False,1-pr),(True,pr)):
+                if not pp_weight: continue
+                if official in COLORS:
+                    probs=[float(official==c) for c in COLORS]
+                else:
+                    # Exceptional late PP cannot be promoted to a confirmed Tempo colour.
+                    rr=float(is_pp and r>0 and eligible(d) and not late)
+                    if late and is_pp and r>0: missing=True; red_missing=True; rr=.5
+                    if rr==1: probs=[0.,0.,1.]
+                    else:
+                        pw=white_conditional(d,z,r,w,b,offset,delta)
+                        if pw is None: missing=True; pw=.5
+                        else:
+                            bonus=white_bellman_bonus(d,z,r,w,b,offset,peak,math.inf if reason=='RESERVED_PP_CAP' else t,pw)
+                            white_bonus_mass+=weight*pp_weight*(1-rr)*bonus
+                            pw+=bonus
+                        nonred_mass+=weight*pp_weight*(1-rr)
+                        probs=[(1-rr)*(1-pw),(1-rr)*pw,rr]
+                for i,p in enumerate(probs):
+                    mass=weight*pp_weight*p
+                    if not mass: continue
+                    totals[i]+=mass; nr,nw,nb=r,w,b
+                    if i==0: nb=max(0,b-1)
+                    if i==1: nw=max(0,w-1)
+                    if i==2: nr=max(0,r-1)
+                    nxt[(min(22,used+int(is_pp and d.month in TUNNEL)),nr,nw,nb)]+=mass
+        s=sum(totals); totals=[p/s for p in totals]; states={k:v/s for k,v in nxt.items() if v>0}
+        source='override_RTE' if official else 'PP_OFFICIAL' if pp is not None and not late else 'PP_MATRIX_CONSTRAINT' if all(x['threshold_j1_mw'] in (0,'Infinity') for x in diag) and totals[2] in (0.,1.) else 'modele_interne'
+        usable=not missing or official is not None or (pp is True and not late and totals[2]>.999999) or d.weekday()==6
+        if missing: unknown_prior=True
+        if not usable: notes.append('Probabilités masquées : données manquantes ; propagation interne indicative.')
+        probs=totals if usable else None; color=COLORS[max(range(3),key=lambda i:totals[i])] if usable else 'inconnue'
+        # Legacy remaining fields: most likely daily path, never negative. Separate expected stocks below.
+        if color in COLORS:
+            idx={'rouge':0,'blanc':1,'bleu':2}[color]; displayed[idx]=max(0,displayed[idx]-1)
+        score,label,comment=confidence(probs,offset,source,gen_source,unknown_prior or pp_stock_source=='Tempo_proxy')
+        # Keep sum of displayed probabilities exactly 1.000.
+        rounded=None
+        if probs is not None:
+            ints=[int(x*1000) for x in probs]; order=sorted(range(3),key=lambda i:probs[i]*1000-ints[i],reverse=True)
+            for i in order[:1000-sum(ints)]: ints[i]+=1
+            rounded=[i/1000 for i in ints]
+        expected=[sum(k[i]*v for k,v in states.items()) for i in (1,2,3)]
+        result[f'J+{offset}']={'date':d.isoformat(),'couleur':color,'modele':source,'c_mw':number(m.get('conso')),'gen_mw':number(m.get('gen')),'gen_source':gen_source,'c_net_mw':number(net),'c_net_tempo_mw':number(net_tempo),'white_bellman_bonus':number(white_bonus_mass,4) if usable else None,'white_bellman_bonus_conditional':number(white_bonus_mass/nonred_mass,4) if usable and nonred_mass>0 else None,'z':number(z,3),'z_raw':number(z,3),'z_source':z_source,'T_nat':tnat,'T_norm':tnorm,'delta_T':number(delta,2),'meteo_bias':(0.0 if abs(delta)<.5 else .03 if abs(delta)<1.5 else .06 if abs(delta)<3 else .09) if delta is not None else None,'red_remaining':displayed[0],'white_remaining':displayed[1],'blue_remaining':displayed[2],'p_bleu':rounded[0] if rounded else None,'p_blanc':rounded[1] if rounded else None,'p_rouge':rounded[2] if rounded else number(totals[2],3) if not red_missing else None,'confidence_score':score,'confidence_label':label,'confidence_comment':comment,'red_deadline_pressure':None,'pp_status':'PP' if pp is True else 'NON_PP' if pp is False else 'PENDING' if signal_ok else 'UNAVAILABLE','pp_source':pp_stock_source,'pp_probability':number(pp_total,4) if not pp_missing or pp is not None else None,'pp_peak_mw':number(peak),'pp_thresholds':diag,'pp_early_probability_indicative':number(p_early,4) if early_known and offset==2 else None,'pp_reason':max(reasons,key=reasons.get),'pp_stock_expected_after':number(sum(k[0]*v for k,v in states.items()),3),'expected_remaining':dict(zip(('rouge','blanc','bleu'),[number(v,3) for v in expected])),'stock_uncertain':unknown_prior,'data_quality':{'gen_profile_dates':m.get('gen_profile_dates',[]),'gen_rte_hours':m.get('gen_rte_hours'),'gen_weather_hours':m.get('gen_weather_hours'),'gen_persistence_hours':m.get('gen_persistence_hours'),'gen_component_sources':m.get('gen_component_sources',{}),'hours':m.get('hours',0),'matched_hours':m.get('matched_hours',0),'expected_hours':m.get('expected_hours',24),'tempo_hours':m.get('tempo_hours'),'tempo_expected_hours':m.get('tempo_expected_hours'),'white_net_source':'06h-06h' if net_tempo is not None else 'calendar_day_fallback' if net is not None else 'missing','probabilities_calibrated':False,'notes':notes}}
+        if ENABLE_DEBUG: result[f'J+{offset}']['z_debug']={'annual_days_count':len(annual),'states':len(states)}
+    return result,errors
+
+# National temperature weights and selected calendar normals carried over from V1.
+STATIONS=[(50.136,1.834,1),(47.5896,7.5299,2),(44.8283,-.7156,4),(50.6589,1.6246,1),(47.0581,2.3703,4.2),(45.617,6.768,2.75),(48.4479,-4.4185,4.2),(49.1733,-.45,2.5),(45.7867,3.1692,2.75),(47.2689,5.0883,1),(43.3847,6.3872,1.2),(50.5619,3.0894,3),(45.8614,1.1794,3.2),(45.7256,5.0811,5.5),(43.4372,5.215,2.4),(43.5762,3.963,1.6),(48.6921,6.2303,3),(47.1532,-1.6107,4.2),(46.999,3.113,1.5),(43.6654,7.215,3.6),(43.8564,4.405,2.4),(44.1405,4.8667,1.2),(48.8218,2.3376,11.25),(42.7404,2.8707,1.6),(48.0695,-1.7348,4.2),(44.0583,5.9917,1.2),(48.5383,7.6282,1),(43.1786,-.0064,4),(43.6306,1.3638,1.6),(47.4322,.7276,4.2),(48.7742,1.9936,11.25),(48.3239,4.0179,1.5)]
+NORMS={11: [11.14, 10.08, 10.92, 10.26, 9.69, 9.16, 9.16, 9.63, 9.71, 9.51, 9.59, 9.43, 9.33, 8.63, 7.74, 7.92, 7.61, 7.57, 7.44, 7.3, 7.18, 7.01, 6.89, 6.84, 7.16, 6.93, 6.6, 6.36, 6.53, 6.73], 1: [4.73, 5.1, 4.88, 4.57, 4.79, 5.12, 4.35, 4.31, 4.92, 4.85, 4.83, 4.54, 4.71, 4.69, 4.62, 4.85, 5.31, 5.23, 5.7, 5.64, 5.55, 5.73, 5.38, 5.0, 4.8, 4.49, 4.49, 4.91, 4.87, 4.68, 4.57], 2: [5.01, 5.13, 5.57, 5.8, 6.17, 6.34, 5.96, 6.11, 5.77, 5.19, 5.27, 5.54, 4.76, 4.76, 4.9, 4.73, 5.04, 5.31, 5.24, 5.4, 5.3, 5.46, 6.0, 6.16, 6.27, 6.39, 6.52, 7.03], 3: [6.9, 6.85, 6.78, 6.65, 6.61, 6.97, 7.46, 7.83, 7.96, 8.03, 8.45, 8.47, 8.3, 8.65, 9.04, 9.32, 9.24, 9.32, 9.12, 9.34, 9.39, 9.23, 9.38, 9.63, 9.51, 9.23, 9.26, 9.23, 9.37, 9.35, 9.9]}
+# Série de décembre reprise du code V1 fourni dans la conversation.
+NORMS[12]=[6.53,6.41,6.42,6.63,6.79,6.20,5.84,5.96,5.72,5.35,5.26,5.37,5.28,4.72,4.62,5.27,5.48,5.59,5.75,5.45,5.51,5.61,5.41,5.49,5.39,4.85,4.71,4.58,4.61,4.96,4.81]
+def norm_temp(d):
+    ns=NORMS.get(d.month)
+    return ns[min(d.day,len(ns))-1] if ns else None
+
+
+def get_weather(today):
+    if not ENABLE_METEO: return {}
+    data=api_json('https://api.open-meteo.com/v1/forecast',params={'latitude':','.join(str(x[0]) for x in STATIONS),'longitude':','.join(str(x[1]) for x in STATIONS),'daily':'temperature_2m_min,temperature_2m_max','timezone':'Europe/Paris','forecast_days':7})
+    if isinstance(data,dict): data=[data]
+    if len(data)!=len(STATIONS): raise ValueError('Nombre de stations météo inattendu')
+    sums=defaultdict(float); weights=defaultdict(float)
+    for station,(_,_,weight) in zip(data,STATIONS):
+        x=station.get('daily',{})
+        for day,lo,hi in zip(x.get('time',[]),x.get('temperature_2m_min',[]),x.get('temperature_2m_max',[])):
+            if lo is None or hi is None: continue
+            d=dt.date.fromisoformat(day); sums[d]+=(lo+hi)*.5*weight; weights[d]+=weight
+    return {d:(round(sums[d]/weights[d],2),norm_temp(d)) for d in sums if weights[d]>0}
+
+
+def read_args(args,today):
+    # Existing HA invocation: RED WHITE BLUE [official tomorrow colour].
+    if len(args)<3: raise ValueError('Arguments requis : rouges_restants blancs_restants bleus_restants [couleur_J+1]')
+    stocks=tuple(int(x) for x in args[:3]); red,white,blue=stocks
+    sy=season_start(today); total=(dt.date(sy.year+1,9,1)-sy).days
+    if not (0<=red<=22 and 0<=white<=43 and 0<=blue<=total-65): raise ValueError('Stocks Tempo invalides')
+    c=args[3].strip().lower() if len(args)>3 else None
+    c={'red':'rouge','white':'blanc','blue':'bleu'}.get(c,c)
+    return stocks,c if c in COLORS else None
+
+
+def normalize_stocks(today,stocks,tempo):
+    """Return stock at end of today, not the stock of unplanned days from HA."""
+    start=season_start(today); end=dt.date(start.year+1,9,1)
+    past=list(date_range(start,today+dt.timedelta(days=1)))
+    if all(d in tempo for d in past):
+        counts=Counter(tempo[d] for d in past)
+        actual=(22-counts['rouge'],43-counts['blanc'],(end-start).days-65-counts['bleu'])
+        if min(actual)>=0:
+            return actual,'Tempo_history',[]
+    n=(end-today).days-1
+    if sum(stocks)==n:
+        return stocks,'HA_end_today',[]
+    tomorrow=today+dt.timedelta(days=1)
+    if sum(stocks)==n-1 and tomorrow<end and tempo.get(tomorrow) in COLORS:
+        fixed=list(stocks); fixed[{'rouge':0,'blanc':1,'bleu':2}[tempo[tomorrow]]]+=1
+        caps=(22,43,(end-start).days-65)
+        if all(x<=cap for x,cap in zip(fixed,caps)):
+            return tuple(fixed),'HA_tomorrow_already_planned',['Stock HA ajusté : la couleur publiée de demain était déjà décomptée.']
+    if sum(stocks)==n+1 and tempo.get(today) in COLORS:
+        fixed=list(stocks); i={'rouge':0,'blanc':1,'bleu':2}[tempo[today]]
+        if fixed[i]>0:
+            fixed[i]-=1
+            return tuple(fixed),'HA_today_included',['Stock HA ajusté : aujourd’hui était encore inclus.']
+    return stocks,'HA_unverified',['Stock HA non réconcilié avec le calendrier ; vérifier la date de référence.']
+
+
+def get_tempo_calendar(token,start,end):
     try:
-        data = build_forecast()
-        wrapper = {"generated_at": dt.datetime.now().isoformat(), **data}
-        print(json.dumps(wrapper))
-    except Exception as e:
-        print("ERROR in build_forecast:", repr(e), file=sys.stderr)
-        err = {"error": str(e), "generated_at": dt.datetime.now().isoformat()}
-        print(json.dumps(err))
-        sys.exit(0)
+        return api_json(TEMPO_URL,token,{**params_dates(start,end),'fallback_status':'false'})
+    except HTTPError as exc:
+        # Before tomorrow is published, the requested end can be rejected.
+        # Retry with today inclusive rather than losing the historical calendar.
+        if exc.code!=400 or (end-start).days<=1: raise
+        return api_json(TEMPO_URL,token,{**params_dates(start,end-dt.timedelta(days=1)),'fallback_status':'false'})
+
+
+def build_forecast(stocks,real_j1=None,now=None):
+    now=now or dt.datetime.now(PARIS); today=now.astimezone(PARIS).date(); token=get_token(); errors=[]
+    start=pp_start(today+dt.timedelta(days=1)); end=today+dt.timedelta(days=7)
+    if today.month==10: start=dt.date(today.year,11,1)
+    # Only request current winter history when in or close to its season.
+    need_pp=any(eligible(d) for d in date_range(today+dt.timedelta(days=1),end)) or today.month in TUNNEL
+    tasks={'short':lambda:api_json(SHORT_URL,token), 'week':lambda:api_json(WEEK_URL,token),
+           'gen':lambda:api_json(GEN_URL,token,{'type':'D-1,D-2,D-3'}),
+           'annual_prev':lambda:api_json(ANNUAL_URL,token,params_dates(dt.date(today.year-1,1,1),dt.date(today.year,1,1))),
+           'annual':lambda:api_json(ANNUAL_URL,token,params_dates(dt.date(today.year,1,1),dt.date(today.year+1,1,1))),
+           'tempo':lambda:get_tempo_calendar(token,season_start(today),min(today+dt.timedelta(days=2),dt.date(season_start(today).year+1,9,1)))}
+    boundary=dt.date(season_start(today).year+1,9,1)
+    if today+dt.timedelta(days=2)>boundary: tasks['tempo_next']=lambda:get_tempo_calendar(token,boundary,today+dt.timedelta(days=2))
+    if need_pp: tasks['pp']=lambda:api_json(SIGNAL_URL,token,params_dates(max(start,dt.date(2026,11,1)),end))
+    if ENABLE_METEO: tasks['weather']=lambda:get_weather(today)
+    if ENABLE_ENR_METEO: tasks['enr_weather']=lambda:get_enr_weather(today)
+    data={}
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        jobs={k:pool.submit(f) for k,f in tasks.items()}
+        for k,job in jobs.items():
+            try: data[k]=job.result()
+            except Exception as exc:
+                errors.append(f'{k}: {type(exc).__name__}: {exc}'); data[k]={}
+    try: signals=parse_signals(data.get('pp',{})); signal_ok=not need_pp or isinstance(data.get('pp',{}).get('signals'),(list,dict))
+    except Exception as exc: signals={}; signal_ok=False; errors.append(f'PP parse: {exc}')
+    # Ignore non-opposable historic data and any update dated after this execution.
+    signals={d:r for d,r in signals.items() if d>=dt.date(2026,11,1) and r[1]<=now}
+    try: tempo={**parse_tempo(data['tempo']),**parse_tempo(data.get('tempo_next',{}))}
+    except Exception as exc: tempo={}; errors.append(f'Tempo parse: {exc}')
+    tomorrow=today+dt.timedelta(days=1)
+    if real_j1 in COLORS and tomorrow not in tempo and now.astimezone(PARIS).time()>=dt.time(10,30): tempo[tomorrow]=real_j1
+    stocks,tempo_stock_source,stock_warnings=normalize_stocks(today,stocks,tempo)
+    errors.extend(stock_warnings)
+    enr_weather=data.get('enr_weather',{})
+    errors.extend(enr_weather.get('warnings',[]))
+    metrics=daily_metrics(today,data['short'],data['week'],data['gen'],now,enr_weather)
+    annual=annual_daily([data['annual_prev'],data['annual']]); matrices=Thresholds()
+    result,errors=forecast(today,stocks,metrics,signals,tempo,matrices,annual,data.get('weather',{}),signal_ok,errors)
+    errors += [f'Matrice {k}: {v}' for k,v in matrices.errors.items()]
+    return {'generated_at':now.isoformat(),'version':'2.1.0',**result,'diagnostics':{'warnings':errors,'matrices_loaded':[f'{k[0]}_j{k[1]}' for k,v in matrices.cache.items() if v],'probabilities_calibrated':False,'enr_model':{'enabled':ENABLE_ENR_METEO,'land_points':len(ENR_LAND),'sea_points':len(ENR_SEA),'capacity_mw':ENR_CAPACITY,'weather_hours_by_component':{k:len(v) for k,v in enr_weather.get('series',{}).items()},'calibrated':False},'tempo_stock_source':tempo_stock_source,'tempo_stock_at_end_today':dict(zip(('rouge','blanc','bleu'),stocks))},'error':None}
+
+
+def main():
+    try:
+        now=dt.datetime.now(PARIS); stocks,color=read_args(sys.argv[1:],now.date())
+        print(json.dumps(build_forecast(stocks,color,now),ensure_ascii=False,allow_nan=False))
+    except Exception as exc:
+        # Preserve JSON on stdout; never expose OAuth credentials or headers.
+        print(json.dumps({'generated_at':dt.datetime.now(PARIS).isoformat(),'version':'2.1.0','error':f'{type(exc).__name__}: {exc}',**{f'J+{i}':None for i in range(1,7)}},ensure_ascii=False))
+        print(f'TEMPO V2: {type(exc).__name__}: {exc}',file=sys.stderr)
+
+if __name__=='__main__': main()
