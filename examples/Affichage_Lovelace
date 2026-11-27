@@ -1,545 +1,1044 @@
-#Affichage des prévisions dans un dashboard
-
-
-  - type: sections
-    title: Estimation des jours TEMPO
-    path: tempo
-    sections:
-      - type: grid
-        cards:
-          - type: vertical-stack
-            cards:
-              - type: horizontal-stack
-                cards:
-                  - type: markdown
-                    content: |2
-
-                        {% set d = (now().date() + timedelta(days=1)) %}
-                        {% set jours = ["lundi","mardi","mercredi","jeudi","vendredi","samedi","dimanche"] %}
-                        {% set mois = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"] %}
-
-                        ### Prévision pour le {{ jours[d.weekday()] }} {{ d.day }} {{ mois[d.month-1] }}
-                  - type: custom:button-card
-                    entity: sensor.tempo_niveau_tension_j_1
-                    show_name: false
-                    show_state: false
-                    show_icon: false
-                    styles:
-                      card:
-                        - width: 18px
-                        - height: 18px
-                        - border-radius: 50%
-                        - padding: 0
-                        - margin: 10px 0 0 0
-                        - box-shadow: none
-                    state:
-                      - value: vert
-                        styles:
-                          card:
-                            - background-color: '#00c853'
-                      - value: jaune
-                        styles:
-                          card:
-                            - background-color: '#FFFF00'
-                      - value: orange
-                        styles:
-                          card:
-                            - background-color: '#ffa000'
-                      - value: rouge
-                        styles:
-                          card:
-                            - background-color: '#ff1744'
-                      - value: violet
-                        styles:
-                          card:
-                            - background-color: '#7f00ff'
-              - type: markdown
-                content: >
-                  {% set score = states('sensor.tempo_j1_conf_score')|int(0) %}
-                  {% set label = states('sensor.tempo_j1_conf_label') %} {% set
-                  comment = states('sensor.tempo_j1_conf_comment') %} {% set
-                  couleur = states('sensor.tempo_j1_couleur') %}
-
-                  {% set stars_map = {
-                    0: "☆☆☆☆☆",
-                    1: "★☆☆☆☆",
-                    2: "★★☆☆☆",
-                    3: "★★★☆☆",
-                    4: "★★★★☆",
-                    5: "★★★★★"
-                  } %} {% set stars = stars_map[score] if score in stars_map
-                  else "☆☆☆☆☆" %}
-
-                  **Couleur estimée :** {{ couleur|capitalize }} - {{ comment
-                  }}<br>
-
-                  **Fiabilité :** {{ stars }}
-                text_only: true
-              - type: custom:bar-card
-                title: ''
-                max: 100
-                decimal: 1
-                positions:
-                  icon: 'off'
-                  name: inside
-                  value: inside
-                entities:
-                  - entity: sensor.tempo_j1_p_bleu
-                    name: Bleu
-                    color: '#1e90ff'
-                  - entity: sensor.tempo_j1_p_blanc
-                    name: Blanc
-                    color: '#dcdcdc'
-                  - entity: sensor.tempo_j1_p_rouge
-                    name: Rouge
-                    color: '#ff4d4d'
-          - type: vertical-stack
-            cards:
-              - type: horizontal-stack
-                cards:
-                  - type: markdown
-                    content: |2
-                        {% set d = (now().date() + timedelta(days=2)) %}
-                        {% set jours = ["lundi","mardi","mercredi","jeudi","vendredi","samedi","dimanche"] %}
-                        {% set mois = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"] %}
-                        ### Prévision pour le {{ jours[d.weekday()] }} {{ d.day }} {{ mois[d.month-1] }}
-                  - type: custom:button-card
-                    entity: sensor.tempo_niveau_tension_j_2
-                    show_name: false
-                    show_state: false
-                    show_icon: false
-                    styles:
-                      card:
-                        - width: 18px
-                        - height: 18px
-                        - border-radius: 50%
-                        - padding: 0
-                        - margin: 10px 0 0 0
-                        - box-shadow: none
-                    state:
-                      - value: vert
-                        styles:
-                          card:
-                            - background-color: '#00c853'
-                      - value: jaune
-                        styles:
-                          card:
-                            - background-color: '#FFFF00'
-                      - value: orange
-                        styles:
-                          card:
-                            - background-color: '#ffa000'
-                      - value: rouge
-                        styles:
-                          card:
-                            - background-color: '#ff1744'
-                      - value: violet
-                        styles:
-                          card:
-                            - background-color: '#7f00ff'
-              - type: markdown
-                content: >
-                  {% set score = states('sensor.tempo_j2_conf_score')|int(0) %}
-
-                  {% set comment = states('sensor.tempo_j2_conf_comment') %}
-
-                  {% set couleur = states('sensor.tempo_j2_couleur') %}
-
-
-                  {% set stars_map = {
-                    0: "☆☆☆☆☆", 1: "★☆☆☆☆", 2: "★★☆☆☆",
-                    3: "★★★☆☆", 4: "★★★★☆", 5: "★★★★★"
-                  } %}
-
-                  {% set stars = stars_map[score] %}
-
-
-                  **Couleur estimée :** {{ couleur|capitalize }} - {{ comment
-                  }}<br>
-
-                  **Fiabilité :** {{ stars }}
-                text_only: true
-              - type: custom:bar-card
-                max: 100
-                decimal: 1
-                positions:
-                  icon: 'off'
-                  name: inside
-                  value: inside
-                entities:
-                  - entity: sensor.tempo_j2_p_bleu
-                    name: Bleu
-                    color: '#1e90ff'
-                  - entity: sensor.tempo_j2_p_blanc
-                    name: Blanc
-                    color: '#dcdcdc'
-                  - entity: sensor.tempo_j2_p_rouge
-                    name: Rouge
-                    color: '#ff4d4d'
-          - type: vertical-stack
-            cards:
-              - type: horizontal-stack
-                cards:
-                  - type: markdown
-                    content: |2
-                        {% set d = (now().date() + timedelta(days=3)) %}
-                        {% set jours = ["lundi","mardi","mercredi","jeudi","vendredi","samedi","dimanche"] %}
-                        {% set mois = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"] %}
-                        ### Prévision pour le {{ jours[d.weekday()] }} {{ d.day }} {{ mois[d.month-1] }}
-                  - type: custom:button-card
-                    entity: sensor.tempo_niveau_tension_j_3
-                    show_name: false
-                    show_state: false
-                    show_icon: false
-                    styles:
-                      card:
-                        - width: 18px
-                        - height: 18px
-                        - border-radius: 50%
-                        - margin: 10px 0 0 0
-                    state:
-                      - value: vert
-                        styles:
-                          card:
-                            - background-color: '#00c853'
-                      - value: jaune
-                        styles:
-                          card:
-                            - background-color: '#FFFF00'
-                      - value: orange
-                        styles:
-                          card:
-                            - background-color: '#ffa000'
-                      - value: rouge
-                        styles:
-                          card:
-                            - background-color: '#ff1744'
-                      - value: violet
-                        styles:
-                          card:
-                            - background-color: '#7f00ff'
-              - type: markdown
-                content: >
-                  {% set score = states('sensor.tempo_j3_conf_score')|int(0) %}
-
-                  {% set comment = states('sensor.tempo_j3_conf_comment') %}
-
-                  {% set couleur = states('sensor.tempo_j3_couleur') %}
-
-
-                  {% set stars_map = {
-                    0: "☆☆☆☆☆", 1: "★☆☆☆☆", 2: "★★☆☆☆",
-                    3: "★★★☆☆", 4: "★★★★☆", 5: "★★★★★"
-                  } %}
-
-                  {% set stars = stars_map[score] %}
-
-
-                  **Couleur estimée :** {{ couleur|capitalize }} - {{ comment
-                  }}<br>
-
-                  **Fiabilité :** {{ stars }}
-                text_only: true
-              - type: custom:bar-card
-                max: 100
-                decimal: 1
-                positions:
-                  icon: 'off'
-                  name: inside
-                  value: inside
-                entities:
-                  - entity: sensor.tempo_j3_p_bleu
-                    name: Bleu
-                    color: '#1e90ff'
-                  - entity: sensor.tempo_j3_p_blanc
-                    name: Blanc
-                    color: '#dcdcdc'
-                  - entity: sensor.tempo_j3_p_rouge
-                    name: Rouge
-                    color: '#ff4d4d'
-          - type: vertical-stack
-            cards:
-              - type: horizontal-stack
-                cards:
-                  - type: markdown
-                    content: |2
-                        {% set d = (now().date() + timedelta(days=4)) %}
-                        {% set jours = ["lundi","mardi","mercredi","jeudi","vendredi","samedi","dimanche"] %}
-                        {% set mois = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"] %}
-                        ### Prévision pour le {{ jours[d.weekday()] }} {{ d.day }} {{ mois[d.month-1] }}
-                  - type: custom:button-card
-                    entity: sensor.tempo_niveau_tension_j_4
-                    show_name: false
-                    show_state: false
-                    show_icon: false
-                    styles:
-                      card:
-                        - width: 18px
-                        - height: 18px
-                        - border-radius: 50%
-                        - margin: 10px 0 0 0
-                    state:
-                      - value: vert
-                        styles:
-                          card:
-                            - background-color: '#00c853'
-                      - value: jaune
-                        styles:
-                          card:
-                            - background-color: '#FFFF00'
-                      - value: orange
-                        styles:
-                          card:
-                            - background-color: '#ffa000'
-                      - value: rouge
-                        styles:
-                          card:
-                            - background-color: '#ff1744'
-                      - value: violet
-                        styles:
-                          card:
-                            - background-color: '#7f00ff'
-              - type: markdown
-                content: >
-                  {% set score = states('sensor.tempo_j4_conf_score')|int(0) %}
-
-                  {% set comment = states('sensor.tempo_j4_conf_comment') %}
-
-                  {% set couleur = states('sensor.tempo_j4_couleur') %}
-
-
-                  {% set stars_map = {
-                    0: "☆☆☆☆☆", 1: "★☆☆☆☆", 2: "★★☆☆☆",
-                    3: "★★★☆☆", 4: "★★★★☆", 5: "★★★★★"
-                  } %}
-
-                  {% set stars = stars_map[score] %}
-
-
-                  **Couleur estimée :** {{ couleur|capitalize }} - {{ comment }}
-                  <br>
-
-                  **Fiabilité :** {{ stars }}
-                text_only: true
-              - type: custom:bar-card
-                max: 100
-                decimal: 1
-                positions:
-                  icon: 'off'
-                  name: inside
-                  value: inside
-                entities:
-                  - entity: sensor.tempo_j4_p_bleu
-                    name: Bleu
-                    color: '#1e90ff'
-                  - entity: sensor.tempo_j4_p_blanc
-                    name: Blanc
-                    color: '#dcdcdc'
-                  - entity: sensor.tempo_j4_p_rouge
-                    name: Rouge
-                    color: '#ff4d4d'
-          - type: vertical-stack
-            cards:
-              - type: horizontal-stack
-                cards:
-                  - type: markdown
-                    content: |2
-                        {% set d = (now().date() + timedelta(days=5)) %}
-                        {% set jours = ["lundi","mardi","mercredi","jeudi","vendredi","samedi","dimanche"] %}
-                        {% set mois = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"] %}
-                        ### Prévision pour le {{ jours[d.weekday()] }} {{ d.day }} {{ mois[d.month-1] }}
-                  - type: custom:button-card
-                    entity: sensor.tempo_niveau_tension_j_5
-                    show_name: false
-                    show_state: false
-                    show_icon: false
-                    styles:
-                      card:
-                        - width: 18px
-                        - height: 18px
-                        - border-radius: 50%
-                        - margin: 10px 0 0 0
-                    state:
-                      - value: vert
-                        styles:
-                          card:
-                            - background-color: '#00c853'
-                      - value: jaune
-                        styles:
-                          card:
-                            - background-color: '#FFFF00'
-                      - value: orange
-                        styles:
-                          card:
-                            - background-color: '#ffa000'
-                      - value: rouge
-                        styles:
-                          card:
-                            - background-color: '#ff1744'
-                      - value: violet
-                        styles:
-                          card:
-                            - background-color: '#7f00ff'
-              - type: markdown
-                content: >
-                  {% set score = states('sensor.tempo_j5_conf_score')|int(0) %}
-
-                  {% set comment = states('sensor.tempo_j5_conf_comment') %}
-
-                  {% set couleur = states('sensor.tempo_j5_couleur') %}
-
-
-                  {% set stars_map = {
-                    0: "☆☆☆☆☆", 1: "★☆☆☆☆", 2: "★★☆☆☆",
-                    3: "★★★☆☆", 4: "★★★★☆", 5: "★★★★★"
-                  } %}
-
-                  {% set stars = stars_map[score] %}
-
-
-                  **Couleur estimée :** {{ couleur|capitalize }} - {{ comment
-                  }}<br>
-
-                  **Fiabilité :** {{ stars }}
-                text_only: true
-              - type: custom:bar-card
-                max: 100
-                decimal: 1
-                positions:
-                  icon: 'off'
-                  name: inside
-                  value: inside
-                entities:
-                  - entity: sensor.tempo_j5_p_bleu
-                    transform: return x*1.5;
-                    name: Bleu
-                    color: '#1e90ff'
-                  - entity: sensor.tempo_j5_p_blanc
-                    transform: return x*1.5;
-                    name: Blanc
-                    color: '#dcdcdc'
-                  - entity: sensor.tempo_j5_p_rouge
-                    transform: return x*1.5;
-                    name: Rouge
-                    color: '#ff4d4d'
-          - type: vertical-stack
-            cards:
-              - type: horizontal-stack
-                cards:
-                  - type: markdown
-                    content: |2
-                        {% set d = (now().date() + timedelta(days=6)) %}
-                        {% set jours = ["lundi","mardi","mercredi","jeudi","vendredi","samedi","dimanche"] %}
-                        {% set mois = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"] %}
-                        ### Prévision pour le {{ jours[d.weekday()] }} {{ d.day }} {{ mois[d.month-1] }}
-                  - type: custom:button-card
-                    entity: sensor.tempo_niveau_tension_j6_2
-                    show_name: false
-                    show_state: false
-                    show_icon: false
-                    styles:
-                      card:
-                        - width: 18px
-                        - height: 18px
-                        - border-radius: 50%
-                        - margin: 10px 0 0 0
-                    state:
-                      - value: vert
-                        styles:
-                          card:
-                            - background-color: '#00c853'
-                      - value: jaune
-                        styles:
-                          card:
-                            - background-color: '#FFFF00'
-                      - value: orange
-                        styles:
-                          card:
-                            - background-color: '#ffa000'
-                      - value: rouge
-                        styles:
-                          card:
-                            - background-color: '#ff1744'
-                      - value: violet
-                        styles:
-                          card:
-                            - background-color: '#7f00ff'
-              - type: markdown
-                content: >
-                  {% set score = states('sensor.tempo_j6_conf_score')|int(0) %}
-
-                  {% set comment = states('sensor.tempo_j6_conf_comment') %}
-
-                  {% set couleur = states('sensor.tempo_j6_couleur') %}
-
-
-                  {% set stars_map = {
-                    0: "☆☆☆☆☆", 1: "★☆☆☆☆", 2: "★★☆☆☆",
-                    3: "★★★☆☆", 4: "★★★★☆", 5: "★★★★★"
-                  } %}
-
-                  {% set stars = stars_map[score] %}
-
-
-                  **Couleur estimée :** {{ couleur|capitalize }} - {{ comment
-                  }}<br>
-
-                  **Fiabilité :** {{ stars }}
-                text_only: true
-              - type: custom:bar-card
-                max: 100
-                decimal: 1
-                positions:
-                  icon: 'off'
-                  name: inside
-                  value: inside
-                entities:
-                  - entity: sensor.tempo_j6_p_bleu
-                    name: Bleu
-                    color: '#1e90ff'
-                  - entity: sensor.tempo_j6_p_blanc
-                    name: Blanc
-                    color: '#dcdcdc'
-                  - entity: sensor.tempo_j6_p_rouge
-                    name: Rouge
-                    color: '#ff4d4d'
-          - show_name: true
-            show_icon: true
-            type: button
-            icon: mdi:arrow-left-bold-box
-            hold_action:
-              action: none
-            tap_action:
-              action: navigate
-              navigation_path: /dashboard-essai
-          - type: markdown
-            content: >
-              <small> Les données de consommation pour effectuer les estimations
-              sont mises à jour auprès de RTE toutes les 4H.<br> L'estimation
-              calculée est croisée avec l'historique de la saison Tempo, le
-              stock de jours restants, et le calendrier afin de donner un indice
-              de fiabilité avec un commentaire justifiant la valeur
-              d'indice.<br> La pastille de couleur donne un indice de demande
-              prévisionnelle d'électricité. </small>
-            text_only: true
-            grid_options:
-              rows: auto
-              columns: 36
-        column_span: 3
-    background:
-      opacity: 33
-      alignment: center
-      size: auto
-      repeat: repeat
-      attachment: fixed
-    cards: []
-    header:
-      layout: responsive
-      badges_position: bottom
-      badges_wrap: scroll
-      card:
-        type: markdown
+type: grid
+cards:
+  - type: vertical-stack
+    cards:
+      - type: markdown
+        content: |-
+          {% set j = state_attr('sensor.tempo_prevision_simple', 'J+1') %}
+          {% set d = strptime(j.get('date', ''), '%Y-%m-%d', none) if j is mapping else none %}
+          {% set d = d if d is not none else (now().date() + timedelta(days=1)) %}
+          {% set jours = ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'] %}
+          {% set mois = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'] %}
+          ### Prévision pour le {{ jours[d.weekday()] }} {{ '1er' if d.day == 1 else d.day }} {{ mois[d.month-1] }}
+      - type: markdown
+        content: |-
+          {% set j = state_attr('sensor.tempo_prevision_simple', 'J+1') %}
+          {% set j = j if j is mapping else {} %}
+          {% set couleur = j.get('couleur') %}
+          {% set score = j.get('confidence_score') | int(0) %}
+          {% set r = j.get('p_rouge') %}
+          {% set w = j.get('p_blanc') %}
+          {% set b = j.get('p_bleu') %}
+          {% set source = j.get('modele') %}
+          {% set stars = '★' * score + '☆' * (5-score) if 0 <= score <= 5 else '☆☆☆☆☆' %}
+          {% if couleur not in ['bleu','blanc','rouge'] %}
+            {% set couleur = 'inconnue' %}
+            {% set comment = 'Données insuffisantes.' %}
+          {% elif source == 'override_RTE' %}
+            {% set comment = 'Couleur Tempo publiée.' %}
+          {% elif couleur == 'bleu' and r == 0 and b == 1 and w == 0 and (strptime(j.get('date', ''), '%Y-%m-%d', none) or (now().date() + timedelta(days=1))).weekday() == 6 %}
+            {% set comment = 'Dimanche : bleu certain.' %}
+          {% elif source == 'PP_OFFICIAL' and j.get('pp_status') == 'PP' and r == 1 %}
+            {% set comment = 'Signal PP publié : rouge attendu.' %}
+          {% elif r is none or w is none or b is none %}
+            {% set comment = 'Données insuffisantes.' %}
+          {% elif source == 'PP_MATRIX_CONSTRAINT' and r == 1 %}
+            {% set comment = 'Rouge imposé par la matrice PP.' %}
+          {% else %}
+            {% set ranked = [('bleu',b),('blanc',w),('rouge',r)] | sort(attribute='1', reverse=true) %}
+            {% set gap = ranked[0][1] - ranked[1][1] %}
+            {% if gap < 0.15 %}
+              {% set comment = 'Duel ' ~ ranked[0][0] ~ '/' ~ ranked[1][0] ~ ' : prévision sensible.' %}
+            {% elif couleur != 'rouge' and r >= 0.25 %}
+              {% set comment = 'Risque rouge significatif.' %}
+            {% elif r == 0 and source == 'PP_MATRIX_CONSTRAINT' %}
+              {% set comment = 'Rouge exclu par la matrice PP.' %}
+            {% elif gap >= 0.25 %}
+              {% set comment = 'Couleur nettement en tête.' %}
+            {% else %}
+              {% set comment = 'Couleur favorite, bascule possible.' %}
+            {% endif %}
+          {% endif %}
+          **Couleur {{ 'officielle' if source == 'override_RTE' else 'estimée' }} :** {{ couleur | capitalize }} - {{ comment }}<br>
+          **Confiance :** {{ stars }}{% if source != 'override_RTE' and score < 5 and j.get('gen_source') in ['estime_meteo_ENR','estime_mixte_ENR','estime_profil_horaire_ENR'] %} · {{ 'ENR météo' if j.get('gen_source') == 'estime_meteo_ENR' else 'ENR mixtes' if j.get('gen_source') == 'estime_mixte_ENR' else 'ENR extrapolées' }}{% endif %}
+          {% set peak = j.get('pp_peak_mw') %}
+          {% set ns = namespace(thresholds=[], blocked=false, forced=false, missing=false) %}
+          {% for entry in j.get('pp_thresholds', []) or [] %}
+            {% if entry is mapping and entry.get('weight', 0) > 0 %}
+              {% set t = entry.get('threshold_j1_mw') %}
+              {% if t == 'Infinity' %}
+                {% set ns.blocked = true %}
+              {% elif t == 0 %}
+                {% set ns.forced = true %}
+              {% elif t is number and t > 0 %}
+                {% set ns.thresholds = ns.thresholds + [t] %}
+              {% else %}
+                {% set ns.missing = true %}
+              {% endif %}
+            {% endif %}
+          {% endfor %}
+          {% if source == 'override_RTE' %}
+            {# La couleur officielle suffit. #}
+          {% elif j.get('pp_status') == 'PP' %}
+            <br>**PP :** signal officiel publié.
+          {% elif j.get('pp_status') == 'NON_PP' %}
+            <br>**PP :** non-PP confirmé.
+          {% elif r == 0 and source == 'PP_MATRIX_CONSTRAINT' %}
+            <br>**PP :** interdit (calendrier ou quota).
+          {% elif r == 1 and source == 'PP_MATRIX_CONSTRAINT' %}
+            <br>**PP :** obligatoire (apurement).
+          {% elif peak is number and ns.thresholds %}
+            {% set lo = ns.thresholds | min %}
+            {% set hi = ns.thresholds | max %}
+            <br>**Pointe PP :** {{ (peak / 1000) | round(1) }} GW · **Seuil J-1 :** {{ (lo / 1000) | round(1) }}{% if hi != lo %}–{{ (hi / 1000) | round(1) }}{% endif %} GW
+            <br>**Approche du seuil :** {% if hi != lo %}{{ (100 * peak / hi) | round(1) }}–{% endif %}{{ (100 * peak / lo) | round(1) }} %{% if ns.blocked or ns.forced or ns.missing %} (scénarios à seuil fini uniquement){% endif %}
+          {% else %}
+            <br>**Pointe PP :** données indisponibles.
+          {% endif %}
         text_only: true
-        content: '#'
-    max_columns: 3
-    dense_section_placement: true
+      - type: custom:button-card
+        entity: sensor.tempo_prevision_simple
+        show_name: false
+        show_icon: false
+        show_state: false
+        show_label: false
+        tap_action:
+          action: none
+        hold_action:
+          action: none
+        styles:
+          card:
+            - background: transparent
+            - border: none
+            - box-shadow: none
+            - padding: 0px 12px 2px
+            - display: |
+                [[[
+                  const j = entity?.attributes?.['J+1'];
+                  if (!j || typeof j.pp_peak_mw !== 'number' || !Number.isFinite(j.pp_peak_mw) || j.pp_peak_mw < 0 || j.modele === 'override_RTE' || ['PP','NON_PP','NON-PP','NONPP'].includes(j.pp_status)) return 'none';
+                  return (Array.isArray(j.pp_thresholds) ? j.pp_thresholds : []).some(e => e && e.weight > 0 && typeof e.threshold_j1_mw === 'number' && Number.isFinite(e.threshold_j1_mw) && e.threshold_j1_mw > 0) ? 'block' : 'none';
+                ]]]
+          grid:
+            - grid-template-areas: '"gauge"'
+            - grid-template-columns: 1fr
+            - grid-template-rows: auto
+          custom_fields:
+            gauge:
+              - width: 100%
+              - min-width: 0
+              - justify-self: stretch
+        custom_fields:
+          gauge: |
+            [[[
+              const a = entity?.attributes || {};
+              const j = a['J+1'];
+              const valid = x => typeof x === 'number' && Number.isFinite(x);
+              const thresholds = day => [...new Set((Array.isArray(day?.pp_thresholds) ? day.pp_thresholds : [])
+                .filter(e => e && e.weight > 0 && valid(e.threshold_j1_mw) && e.threshold_j1_mw > 0)
+                .map(e => e.threshold_j1_mw))].sort((a,b) => a-b);
+              if (!j || !valid(j.pp_peak_mw) || j.pp_peak_mw < 0 || j.modele === 'override_RTE' || ['PP','NON_PP','NON-PP','NONPP'].includes(j.pp_status)) return '';
+              const ts = thresholds(j);
+              if (!ts.length) return '';
+              const peak = j.pp_peak_mw;
+              const values = [80000];
+              for (let n=1;n<=6;n++) {
+                const d = a['J+'+n];
+                if (d && valid(d.pp_peak_mw)) values.push(d.pp_peak_mw);
+                values.push(...thresholds(d));
+              }
+              const max = Math.ceil(Math.max(...values)*1.05/10000)*10000;
+              const x = v => 8 + 284*v/max;
+              const lo = ts[0], hi = ts[ts.length-1];
+              const fmt = v => (v/1000).toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1});
+              const markers = ts.map(t => `<line x1="${x(t)}" x2="${x(t)}" y1="4" y2="19" stroke="#dc2626" stroke-width="1.5"/>`).join('');
+              const range = hi>lo ? `<rect x="${x(lo)}" y="8" width="${x(hi)-x(lo)}" height="8" fill="#dc2626" opacity=".22"/>` : '';
+              return `<div style="width:100%;text-align:left;font-size:10px;line-height:1.25;color:var(--secondary-text-color);">
+                <svg viewBox="0 0 300 31" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;max-height:35px;display:block;" role="img" aria-label="Pointe ${fmt(peak)} GW, seuil ${fmt(lo)}${hi!==lo?' à '+fmt(hi):''} GW">
+                  <rect x="8" y="8" width="284" height="8" rx="3" fill="currentColor" opacity=".18"/>
+                  ${range}
+                  <rect x="8" y="8" width="${Math.max(0,x(peak)-8)}" height="8" rx="3" fill="#ea580c"/>
+                  ${markers}
+                  <text x="8" y="28" font-size="9" fill="currentColor">0</text>
+                  <text x="292" y="28" text-anchor="end" font-size="9" fill="currentColor">${max/1000} GW</text>
+                </svg>
+                <span style="color:#ea580c">■</span> Pointe prévue · <span style="color:#dc2626">│</span> Seuil(s) J-1
+              </div>`;
+            ]]]
+      - type: custom:bar-card
+        title: ''
+        max: 100
+        decimal: 1
+        positions:
+          icon: 'off'
+          name: inside
+          value: inside
+        entities:
+          - entity: sensor.tempo_j1_p_bleu
+            name: Bleu
+            color: '#1e90ff'
+          - entity: sensor.tempo_j1_p_blanc
+            name: Blanc
+            color: '#dcdcdc'
+          - entity: sensor.tempo_j1_p_rouge
+            name: Rouge
+            color: '#ff4d4d'
+  - type: vertical-stack
+    cards:
+      - type: markdown
+        content: |-
+          {% set j = state_attr('sensor.tempo_prevision_simple', 'J+2') %}
+          {% set d = strptime(j.get('date', ''), '%Y-%m-%d', none) if j is mapping else none %}
+          {% set d = d if d is not none else (now().date() + timedelta(days=2)) %}
+          {% set jours = ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'] %}
+          {% set mois = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'] %}
+          ### Prévision pour le {{ jours[d.weekday()] }} {{ '1er' if d.day == 1 else d.day }} {{ mois[d.month-1] }}
+      - type: markdown
+        content: |-
+          {% set j = state_attr('sensor.tempo_prevision_simple', 'J+2') %}
+          {% set j = j if j is mapping else {} %}
+          {% set couleur = j.get('couleur') %}
+          {% set score = j.get('confidence_score') | int(0) %}
+          {% set r = j.get('p_rouge') %}
+          {% set w = j.get('p_blanc') %}
+          {% set b = j.get('p_bleu') %}
+          {% set source = j.get('modele') %}
+          {% set stars = '★' * score + '☆' * (5-score) if 0 <= score <= 5 else '☆☆☆☆☆' %}
+          {% if couleur not in ['bleu','blanc','rouge'] %}
+            {% set couleur = 'inconnue' %}
+            {% set comment = 'Données insuffisantes.' %}
+          {% elif source == 'override_RTE' %}
+            {% set comment = 'Couleur Tempo publiée.' %}
+          {% elif couleur == 'bleu' and r == 0 and b == 1 and w == 0 and (strptime(j.get('date', ''), '%Y-%m-%d', none) or (now().date() + timedelta(days=2))).weekday() == 6 %}
+            {% set comment = 'Dimanche : bleu certain.' %}
+          {% elif source == 'PP_OFFICIAL' and j.get('pp_status') == 'PP' and r == 1 %}
+            {% set comment = 'Signal PP publié : rouge attendu.' %}
+          {% elif r is none or w is none or b is none %}
+            {% set comment = 'Données insuffisantes.' %}
+          {% elif source == 'PP_MATRIX_CONSTRAINT' and r == 1 %}
+            {% set comment = 'Rouge imposé par la matrice PP.' %}
+          {% else %}
+            {% set ranked = [('bleu',b),('blanc',w),('rouge',r)] | sort(attribute='1', reverse=true) %}
+            {% set gap = ranked[0][1] - ranked[1][1] %}
+            {% if gap < 0.15 %}
+              {% set comment = 'Duel ' ~ ranked[0][0] ~ '/' ~ ranked[1][0] ~ ' : prévision sensible.' %}
+            {% elif couleur != 'rouge' and r >= 0.25 %}
+              {% set comment = 'Risque rouge significatif.' %}
+            {% elif r == 0 and source == 'PP_MATRIX_CONSTRAINT' %}
+              {% set comment = 'Rouge exclu par la matrice PP.' %}
+            {% elif gap >= 0.25 %}
+              {% set comment = 'Couleur nettement en tête.' %}
+            {% else %}
+              {% set comment = 'Couleur favorite, bascule possible.' %}
+            {% endif %}
+          {% endif %}
+          **Couleur {{ 'officielle' if source == 'override_RTE' else 'estimée' }} :** {{ couleur | capitalize }} - {{ comment }}<br>
+          **Confiance :** {{ stars }}{% if source != 'override_RTE' and score < 5 and j.get('gen_source') in ['estime_meteo_ENR','estime_mixte_ENR','estime_profil_horaire_ENR'] %} · {{ 'ENR météo' if j.get('gen_source') == 'estime_meteo_ENR' else 'ENR mixtes' if j.get('gen_source') == 'estime_mixte_ENR' else 'ENR extrapolées' }}{% endif %}
+          {% set peak = j.get('pp_peak_mw') %}
+          {% set ns = namespace(thresholds=[], blocked=false, forced=false, missing=false) %}
+          {% for entry in j.get('pp_thresholds', []) or [] %}
+            {% if entry is mapping and entry.get('weight', 0) > 0 %}
+              {% set t = entry.get('threshold_j1_mw') %}
+              {% if t == 'Infinity' %}
+                {% set ns.blocked = true %}
+              {% elif t == 0 %}
+                {% set ns.forced = true %}
+              {% elif t is number and t > 0 %}
+                {% set ns.thresholds = ns.thresholds + [t] %}
+              {% else %}
+                {% set ns.missing = true %}
+              {% endif %}
+            {% endif %}
+          {% endfor %}
+          {% if source == 'override_RTE' %}
+            {# La couleur officielle suffit. #}
+          {% elif j.get('pp_status') == 'PP' %}
+            <br>**PP :** signal officiel publié.
+          {% elif j.get('pp_status') == 'NON_PP' %}
+            <br>**PP :** non-PP confirmé.
+          {% elif r == 0 and source == 'PP_MATRIX_CONSTRAINT' %}
+            <br>**PP :** interdit (calendrier ou quota).
+          {% elif r == 1 and source == 'PP_MATRIX_CONSTRAINT' %}
+            <br>**PP :** obligatoire (apurement).
+          {% elif peak is number and ns.thresholds %}
+            {% set lo = ns.thresholds | min %}
+            {% set hi = ns.thresholds | max %}
+            <br>**Pointe PP :** {{ (peak / 1000) | round(1) }} GW · **Seuil J-1 :** {{ (lo / 1000) | round(1) }}{% if hi != lo %}–{{ (hi / 1000) | round(1) }}{% endif %} GW
+            <br>**Approche du seuil :** {% if hi != lo %}{{ (100 * peak / hi) | round(1) }}–{% endif %}{{ (100 * peak / lo) | round(1) }} %{% if ns.blocked or ns.forced or ns.missing %} (scénarios à seuil fini uniquement){% endif %}
+          {% else %}
+            <br>**Pointe PP :** données indisponibles.
+          {% endif %}
+        text_only: true
+      - type: custom:button-card
+        entity: sensor.tempo_prevision_simple
+        show_name: false
+        show_icon: false
+        show_state: false
+        show_label: false
+        tap_action:
+          action: none
+        hold_action:
+          action: none
+        styles:
+          card:
+            - background: transparent
+            - border: none
+            - box-shadow: none
+            - padding: 0px 12px 2px
+            - display: |
+                [[[
+                  const j = entity?.attributes?.['J+2'];
+                  if (!j || typeof j.pp_peak_mw !== 'number' || !Number.isFinite(j.pp_peak_mw) || j.pp_peak_mw < 0 || j.modele === 'override_RTE' || ['PP','NON_PP','NON-PP','NONPP'].includes(j.pp_status)) return 'none';
+                  return (Array.isArray(j.pp_thresholds) ? j.pp_thresholds : []).some(e => e && e.weight > 0 && typeof e.threshold_j1_mw === 'number' && Number.isFinite(e.threshold_j1_mw) && e.threshold_j1_mw > 0) ? 'block' : 'none';
+                ]]]
+          grid:
+            - grid-template-areas: '"gauge"'
+            - grid-template-columns: 1fr
+            - grid-template-rows: auto
+          custom_fields:
+            gauge:
+              - width: 100%
+              - min-width: 0
+              - justify-self: stretch
+        custom_fields:
+          gauge: |
+            [[[
+              const a = entity?.attributes || {};
+              const j = a['J+2'];
+              const valid = x => typeof x === 'number' && Number.isFinite(x);
+              const thresholds = day => [...new Set((Array.isArray(day?.pp_thresholds) ? day.pp_thresholds : [])
+                .filter(e => e && e.weight > 0 && valid(e.threshold_j1_mw) && e.threshold_j1_mw > 0)
+                .map(e => e.threshold_j1_mw))].sort((a,b) => a-b);
+              if (!j || !valid(j.pp_peak_mw) || j.pp_peak_mw < 0 || j.modele === 'override_RTE' || ['PP','NON_PP','NON-PP','NONPP'].includes(j.pp_status)) return '';
+              const ts = thresholds(j);
+              if (!ts.length) return '';
+              const peak = j.pp_peak_mw;
+              const values = [80000];
+              for (let n=1;n<=6;n++) {
+                const d = a['J+'+n];
+                if (d && valid(d.pp_peak_mw)) values.push(d.pp_peak_mw);
+                values.push(...thresholds(d));
+              }
+              const max = Math.ceil(Math.max(...values)*1.05/10000)*10000;
+              const x = v => 8 + 284*v/max;
+              const lo = ts[0], hi = ts[ts.length-1];
+              const fmt = v => (v/1000).toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1});
+              const markers = ts.map(t => `<line x1="${x(t)}" x2="${x(t)}" y1="4" y2="19" stroke="#dc2626" stroke-width="1.5"/>`).join('');
+              const range = hi>lo ? `<rect x="${x(lo)}" y="8" width="${x(hi)-x(lo)}" height="8" fill="#dc2626" opacity=".22"/>` : '';
+              return `<div style="width:100%;text-align:left;font-size:10px;line-height:1.25;color:var(--secondary-text-color);">
+                <svg viewBox="0 0 300 31" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;max-height:35px;display:block;" role="img" aria-label="Pointe ${fmt(peak)} GW, seuil ${fmt(lo)}${hi!==lo?' à '+fmt(hi):''} GW">
+                  <rect x="8" y="8" width="284" height="8" rx="3" fill="currentColor" opacity=".18"/>
+                  ${range}
+                  <rect x="8" y="8" width="${Math.max(0,x(peak)-8)}" height="8" rx="3" fill="#ea580c"/>
+                  ${markers}
+                  <text x="8" y="28" font-size="9" fill="currentColor">0</text>
+                  <text x="292" y="28" text-anchor="end" font-size="9" fill="currentColor">${max/1000} GW</text>
+                </svg>
+                <span style="color:#ea580c">■</span> Pointe prévue · <span style="color:#dc2626">│</span> Seuil(s) J-1
+              </div>`;
+            ]]]
+      - type: custom:bar-card
+        max: 100
+        decimal: 1
+        positions:
+          icon: 'off'
+          name: inside
+          value: inside
+        entities:
+          - entity: sensor.tempo_j2_p_bleu
+            name: Bleu
+            color: '#1e90ff'
+          - entity: sensor.tempo_j2_p_blanc
+            name: Blanc
+            color: '#dcdcdc'
+          - entity: sensor.tempo_j2_p_rouge
+            name: Rouge
+            color: '#ff4d4d'
+  - type: vertical-stack
+    cards:
+      - type: markdown
+        content: |-
+          {% set j = state_attr('sensor.tempo_prevision_simple', 'J+3') %}
+          {% set d = strptime(j.get('date', ''), '%Y-%m-%d', none) if j is mapping else none %}
+          {% set d = d if d is not none else (now().date() + timedelta(days=3)) %}
+          {% set jours = ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'] %}
+          {% set mois = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'] %}
+          ### Prévision pour le {{ jours[d.weekday()] }} {{ '1er' if d.day == 1 else d.day }} {{ mois[d.month-1] }}
+      - type: markdown
+        content: |-
+          {% set j = state_attr('sensor.tempo_prevision_simple', 'J+3') %}
+          {% set j = j if j is mapping else {} %}
+          {% set couleur = j.get('couleur') %}
+          {% set score = j.get('confidence_score') | int(0) %}
+          {% set r = j.get('p_rouge') %}
+          {% set w = j.get('p_blanc') %}
+          {% set b = j.get('p_bleu') %}
+          {% set source = j.get('modele') %}
+          {% set stars = '★' * score + '☆' * (5-score) if 0 <= score <= 5 else '☆☆☆☆☆' %}
+          {% if couleur not in ['bleu','blanc','rouge'] %}
+            {% set couleur = 'inconnue' %}
+            {% set comment = 'Données insuffisantes.' %}
+          {% elif source == 'override_RTE' %}
+            {% set comment = 'Couleur Tempo publiée.' %}
+          {% elif couleur == 'bleu' and r == 0 and b == 1 and w == 0 and (strptime(j.get('date', ''), '%Y-%m-%d', none) or (now().date() + timedelta(days=3))).weekday() == 6 %}
+            {% set comment = 'Dimanche : bleu certain.' %}
+          {% elif source == 'PP_OFFICIAL' and j.get('pp_status') == 'PP' and r == 1 %}
+            {% set comment = 'Signal PP publié : rouge attendu.' %}
+          {% elif r is none or w is none or b is none %}
+            {% set comment = 'Données insuffisantes.' %}
+          {% elif source == 'PP_MATRIX_CONSTRAINT' and r == 1 %}
+            {% set comment = 'Rouge imposé par la matrice PP.' %}
+          {% else %}
+            {% set ranked = [('bleu',b),('blanc',w),('rouge',r)] | sort(attribute='1', reverse=true) %}
+            {% set gap = ranked[0][1] - ranked[1][1] %}
+            {% if gap < 0.15 %}
+              {% set comment = 'Duel ' ~ ranked[0][0] ~ '/' ~ ranked[1][0] ~ ' : prévision sensible.' %}
+            {% elif couleur != 'rouge' and r >= 0.25 %}
+              {% set comment = 'Risque rouge significatif.' %}
+            {% elif r == 0 and source == 'PP_MATRIX_CONSTRAINT' %}
+              {% set comment = 'Rouge exclu par la matrice PP.' %}
+            {% elif gap >= 0.25 %}
+              {% set comment = 'Couleur nettement en tête.' %}
+            {% else %}
+              {% set comment = 'Couleur favorite, bascule possible.' %}
+            {% endif %}
+          {% endif %}
+          **Couleur {{ 'officielle' if source == 'override_RTE' else 'estimée' }} :** {{ couleur | capitalize }} - {{ comment }}<br>
+          **Confiance :** {{ stars }}{% if source != 'override_RTE' and score < 5 and j.get('gen_source') in ['estime_meteo_ENR','estime_mixte_ENR','estime_profil_horaire_ENR'] %} · {{ 'ENR météo' if j.get('gen_source') == 'estime_meteo_ENR' else 'ENR mixtes' if j.get('gen_source') == 'estime_mixte_ENR' else 'ENR extrapolées' }}{% endif %}
+          {% set peak = j.get('pp_peak_mw') %}
+          {% set ns = namespace(thresholds=[], blocked=false, forced=false, missing=false) %}
+          {% for entry in j.get('pp_thresholds', []) or [] %}
+            {% if entry is mapping and entry.get('weight', 0) > 0 %}
+              {% set t = entry.get('threshold_j1_mw') %}
+              {% if t == 'Infinity' %}
+                {% set ns.blocked = true %}
+              {% elif t == 0 %}
+                {% set ns.forced = true %}
+              {% elif t is number and t > 0 %}
+                {% set ns.thresholds = ns.thresholds + [t] %}
+              {% else %}
+                {% set ns.missing = true %}
+              {% endif %}
+            {% endif %}
+          {% endfor %}
+          {% if source == 'override_RTE' %}
+            {# La couleur officielle suffit. #}
+          {% elif j.get('pp_status') == 'PP' %}
+            <br>**PP :** signal officiel publié.
+          {% elif j.get('pp_status') == 'NON_PP' %}
+            <br>**PP :** non-PP confirmé.
+          {% elif r == 0 and source == 'PP_MATRIX_CONSTRAINT' %}
+            <br>**PP :** interdit (calendrier ou quota).
+          {% elif r == 1 and source == 'PP_MATRIX_CONSTRAINT' %}
+            <br>**PP :** obligatoire (apurement).
+          {% elif peak is number and ns.thresholds %}
+            {% set lo = ns.thresholds | min %}
+            {% set hi = ns.thresholds | max %}
+            <br>**Pointe PP :** {{ (peak / 1000) | round(1) }} GW · **Seuil J-1 :** {{ (lo / 1000) | round(1) }}{% if hi != lo %}–{{ (hi / 1000) | round(1) }}{% endif %} GW
+            <br>**Approche du seuil :** {% if hi != lo %}{{ (100 * peak / hi) | round(1) }}–{% endif %}{{ (100 * peak / lo) | round(1) }} %{% if ns.blocked or ns.forced or ns.missing %} (scénarios à seuil fini uniquement){% endif %}
+          {% else %}
+            <br>**Pointe PP :** données indisponibles.
+          {% endif %}
+        text_only: true
+      - type: custom:button-card
+        entity: sensor.tempo_prevision_simple
+        show_name: false
+        show_icon: false
+        show_state: false
+        show_label: false
+        tap_action:
+          action: none
+        hold_action:
+          action: none
+        styles:
+          card:
+            - background: transparent
+            - border: none
+            - box-shadow: none
+            - padding: 0px 12px 2px
+            - display: |
+                [[[
+                  const j = entity?.attributes?.['J+3'];
+                  if (!j || typeof j.pp_peak_mw !== 'number' || !Number.isFinite(j.pp_peak_mw) || j.pp_peak_mw < 0 || j.modele === 'override_RTE' || ['PP','NON_PP','NON-PP','NONPP'].includes(j.pp_status)) return 'none';
+                  return (Array.isArray(j.pp_thresholds) ? j.pp_thresholds : []).some(e => e && e.weight > 0 && typeof e.threshold_j1_mw === 'number' && Number.isFinite(e.threshold_j1_mw) && e.threshold_j1_mw > 0) ? 'block' : 'none';
+                ]]]
+          grid:
+            - grid-template-areas: '"gauge"'
+            - grid-template-columns: 1fr
+            - grid-template-rows: auto
+          custom_fields:
+            gauge:
+              - width: 100%
+              - min-width: 0
+              - justify-self: stretch
+        custom_fields:
+          gauge: |
+            [[[
+              const a = entity?.attributes || {};
+              const j = a['J+3'];
+              const valid = x => typeof x === 'number' && Number.isFinite(x);
+              const thresholds = day => [...new Set((Array.isArray(day?.pp_thresholds) ? day.pp_thresholds : [])
+                .filter(e => e && e.weight > 0 && valid(e.threshold_j1_mw) && e.threshold_j1_mw > 0)
+                .map(e => e.threshold_j1_mw))].sort((a,b) => a-b);
+              if (!j || !valid(j.pp_peak_mw) || j.pp_peak_mw < 0 || j.modele === 'override_RTE' || ['PP','NON_PP','NON-PP','NONPP'].includes(j.pp_status)) return '';
+              const ts = thresholds(j);
+              if (!ts.length) return '';
+              const peak = j.pp_peak_mw;
+              const values = [80000];
+              for (let n=1;n<=6;n++) {
+                const d = a['J+'+n];
+                if (d && valid(d.pp_peak_mw)) values.push(d.pp_peak_mw);
+                values.push(...thresholds(d));
+              }
+              const max = Math.ceil(Math.max(...values)*1.05/10000)*10000;
+              const x = v => 8 + 284*v/max;
+              const lo = ts[0], hi = ts[ts.length-1];
+              const fmt = v => (v/1000).toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1});
+              const markers = ts.map(t => `<line x1="${x(t)}" x2="${x(t)}" y1="4" y2="19" stroke="#dc2626" stroke-width="1.5"/>`).join('');
+              const range = hi>lo ? `<rect x="${x(lo)}" y="8" width="${x(hi)-x(lo)}" height="8" fill="#dc2626" opacity=".22"/>` : '';
+              return `<div style="width:100%;text-align:left;font-size:10px;line-height:1.25;color:var(--secondary-text-color);">
+                <svg viewBox="0 0 300 31" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;max-height:35px;display:block;" role="img" aria-label="Pointe ${fmt(peak)} GW, seuil ${fmt(lo)}${hi!==lo?' à '+fmt(hi):''} GW">
+                  <rect x="8" y="8" width="284" height="8" rx="3" fill="currentColor" opacity=".18"/>
+                  ${range}
+                  <rect x="8" y="8" width="${Math.max(0,x(peak)-8)}" height="8" rx="3" fill="#ea580c"/>
+                  ${markers}
+                  <text x="8" y="28" font-size="9" fill="currentColor">0</text>
+                  <text x="292" y="28" text-anchor="end" font-size="9" fill="currentColor">${max/1000} GW</text>
+                </svg>
+                <span style="color:#ea580c">■</span> Pointe prévue · <span style="color:#dc2626">│</span> Seuil(s) J-1
+              </div>`;
+            ]]]
+      - type: custom:bar-card
+        max: 100
+        decimal: 1
+        positions:
+          icon: 'off'
+          name: inside
+          value: inside
+        entities:
+          - entity: sensor.tempo_j3_p_bleu
+            name: Bleu
+            color: '#1e90ff'
+          - entity: sensor.tempo_j3_p_blanc
+            name: Blanc
+            color: '#dcdcdc'
+          - entity: sensor.tempo_j3_p_rouge
+            name: Rouge
+            color: '#ff4d4d'
+  - type: vertical-stack
+    cards:
+      - type: markdown
+        content: |-
+          {% set j = state_attr('sensor.tempo_prevision_simple', 'J+4') %}
+          {% set d = strptime(j.get('date', ''), '%Y-%m-%d', none) if j is mapping else none %}
+          {% set d = d if d is not none else (now().date() + timedelta(days=4)) %}
+          {% set jours = ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'] %}
+          {% set mois = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'] %}
+          ### Prévision pour le {{ jours[d.weekday()] }} {{ '1er' if d.day == 1 else d.day }} {{ mois[d.month-1] }}
+      - type: markdown
+        content: |-
+          {% set j = state_attr('sensor.tempo_prevision_simple', 'J+4') %}
+          {% set j = j if j is mapping else {} %}
+          {% set couleur = j.get('couleur') %}
+          {% set score = j.get('confidence_score') | int(0) %}
+          {% set r = j.get('p_rouge') %}
+          {% set w = j.get('p_blanc') %}
+          {% set b = j.get('p_bleu') %}
+          {% set source = j.get('modele') %}
+          {% set stars = '★' * score + '☆' * (5-score) if 0 <= score <= 5 else '☆☆☆☆☆' %}
+          {% if couleur not in ['bleu','blanc','rouge'] %}
+            {% set couleur = 'inconnue' %}
+            {% set comment = 'Données insuffisantes.' %}
+          {% elif source == 'override_RTE' %}
+            {% set comment = 'Couleur Tempo publiée.' %}
+          {% elif couleur == 'bleu' and r == 0 and b == 1 and w == 0 and (strptime(j.get('date', ''), '%Y-%m-%d', none) or (now().date() + timedelta(days=4))).weekday() == 6 %}
+            {% set comment = 'Dimanche : bleu certain.' %}
+          {% elif source == 'PP_OFFICIAL' and j.get('pp_status') == 'PP' and r == 1 %}
+            {% set comment = 'Signal PP publié : rouge attendu.' %}
+          {% elif r is none or w is none or b is none %}
+            {% set comment = 'Données insuffisantes.' %}
+          {% elif source == 'PP_MATRIX_CONSTRAINT' and r == 1 %}
+            {% set comment = 'Rouge imposé par la matrice PP.' %}
+          {% else %}
+            {% set ranked = [('bleu',b),('blanc',w),('rouge',r)] | sort(attribute='1', reverse=true) %}
+            {% set gap = ranked[0][1] - ranked[1][1] %}
+            {% if gap < 0.15 %}
+              {% set comment = 'Duel ' ~ ranked[0][0] ~ '/' ~ ranked[1][0] ~ ' : prévision sensible.' %}
+            {% elif couleur != 'rouge' and r >= 0.25 %}
+              {% set comment = 'Risque rouge significatif.' %}
+            {% elif r == 0 and source == 'PP_MATRIX_CONSTRAINT' %}
+              {% set comment = 'Rouge exclu par la matrice PP.' %}
+            {% elif gap >= 0.25 %}
+              {% set comment = 'Couleur nettement en tête.' %}
+            {% else %}
+              {% set comment = 'Couleur favorite, bascule possible.' %}
+            {% endif %}
+          {% endif %}
+          **Couleur {{ 'officielle' if source == 'override_RTE' else 'estimée' }} :** {{ couleur | capitalize }} - {{ comment }}<br>
+          **Confiance :** {{ stars }}{% if source != 'override_RTE' and score < 5 and j.get('gen_source') in ['estime_meteo_ENR','estime_mixte_ENR','estime_profil_horaire_ENR'] %} · {{ 'ENR météo' if j.get('gen_source') == 'estime_meteo_ENR' else 'ENR mixtes' if j.get('gen_source') == 'estime_mixte_ENR' else 'ENR extrapolées' }}{% endif %}
+          {% set peak = j.get('pp_peak_mw') %}
+          {% set ns = namespace(thresholds=[], blocked=false, forced=false, missing=false) %}
+          {% for entry in j.get('pp_thresholds', []) or [] %}
+            {% if entry is mapping and entry.get('weight', 0) > 0 %}
+              {% set t = entry.get('threshold_j1_mw') %}
+              {% if t == 'Infinity' %}
+                {% set ns.blocked = true %}
+              {% elif t == 0 %}
+                {% set ns.forced = true %}
+              {% elif t is number and t > 0 %}
+                {% set ns.thresholds = ns.thresholds + [t] %}
+              {% else %}
+                {% set ns.missing = true %}
+              {% endif %}
+            {% endif %}
+          {% endfor %}
+          {% if source == 'override_RTE' %}
+            {# La couleur officielle suffit. #}
+          {% elif j.get('pp_status') == 'PP' %}
+            <br>**PP :** signal officiel publié.
+          {% elif j.get('pp_status') == 'NON_PP' %}
+            <br>**PP :** non-PP confirmé.
+          {% elif r == 0 and source == 'PP_MATRIX_CONSTRAINT' %}
+            <br>**PP :** interdit (calendrier ou quota).
+          {% elif r == 1 and source == 'PP_MATRIX_CONSTRAINT' %}
+            <br>**PP :** obligatoire (apurement).
+          {% elif peak is number and ns.thresholds %}
+            {% set lo = ns.thresholds | min %}
+            {% set hi = ns.thresholds | max %}
+            <br>**Pointe PP :** {{ (peak / 1000) | round(1) }} GW · **Seuil J-1 :** {{ (lo / 1000) | round(1) }}{% if hi != lo %}–{{ (hi / 1000) | round(1) }}{% endif %} GW
+            <br>**Approche du seuil :** {% if hi != lo %}{{ (100 * peak / hi) | round(1) }}–{% endif %}{{ (100 * peak / lo) | round(1) }} %{% if ns.blocked or ns.forced or ns.missing %} (scénarios à seuil fini uniquement){% endif %}
+          {% else %}
+            <br>**Pointe PP :** données indisponibles.
+          {% endif %}
+        text_only: true
+      - type: custom:button-card
+        entity: sensor.tempo_prevision_simple
+        show_name: false
+        show_icon: false
+        show_state: false
+        show_label: false
+        tap_action:
+          action: none
+        hold_action:
+          action: none
+        styles:
+          card:
+            - background: transparent
+            - border: none
+            - box-shadow: none
+            - padding: 0px 12px 2px
+            - display: |
+                [[[
+                  const j = entity?.attributes?.['J+4'];
+                  if (!j || typeof j.pp_peak_mw !== 'number' || !Number.isFinite(j.pp_peak_mw) || j.pp_peak_mw < 0 || j.modele === 'override_RTE' || ['PP','NON_PP','NON-PP','NONPP'].includes(j.pp_status)) return 'none';
+                  return (Array.isArray(j.pp_thresholds) ? j.pp_thresholds : []).some(e => e && e.weight > 0 && typeof e.threshold_j1_mw === 'number' && Number.isFinite(e.threshold_j1_mw) && e.threshold_j1_mw > 0) ? 'block' : 'none';
+                ]]]
+          grid:
+            - grid-template-areas: '"gauge"'
+            - grid-template-columns: 1fr
+            - grid-template-rows: auto
+          custom_fields:
+            gauge:
+              - width: 100%
+              - min-width: 0
+              - justify-self: stretch
+        custom_fields:
+          gauge: |
+            [[[
+              const a = entity?.attributes || {};
+              const j = a['J+4'];
+              const valid = x => typeof x === 'number' && Number.isFinite(x);
+              const thresholds = day => [...new Set((Array.isArray(day?.pp_thresholds) ? day.pp_thresholds : [])
+                .filter(e => e && e.weight > 0 && valid(e.threshold_j1_mw) && e.threshold_j1_mw > 0)
+                .map(e => e.threshold_j1_mw))].sort((a,b) => a-b);
+              if (!j || !valid(j.pp_peak_mw) || j.pp_peak_mw < 0 || j.modele === 'override_RTE' || ['PP','NON_PP','NON-PP','NONPP'].includes(j.pp_status)) return '';
+              const ts = thresholds(j);
+              if (!ts.length) return '';
+              const peak = j.pp_peak_mw;
+              const values = [80000];
+              for (let n=1;n<=6;n++) {
+                const d = a['J+'+n];
+                if (d && valid(d.pp_peak_mw)) values.push(d.pp_peak_mw);
+                values.push(...thresholds(d));
+              }
+              const max = Math.ceil(Math.max(...values)*1.05/10000)*10000;
+              const x = v => 8 + 284*v/max;
+              const lo = ts[0], hi = ts[ts.length-1];
+              const fmt = v => (v/1000).toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1});
+              const markers = ts.map(t => `<line x1="${x(t)}" x2="${x(t)}" y1="4" y2="19" stroke="#dc2626" stroke-width="1.5"/>`).join('');
+              const range = hi>lo ? `<rect x="${x(lo)}" y="8" width="${x(hi)-x(lo)}" height="8" fill="#dc2626" opacity=".22"/>` : '';
+              return `<div style="width:100%;text-align:left;font-size:10px;line-height:1.25;color:var(--secondary-text-color);">
+                <svg viewBox="0 0 300 31" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;max-height:35px;display:block;" role="img" aria-label="Pointe ${fmt(peak)} GW, seuil ${fmt(lo)}${hi!==lo?' à '+fmt(hi):''} GW">
+                  <rect x="8" y="8" width="284" height="8" rx="3" fill="currentColor" opacity=".18"/>
+                  ${range}
+                  <rect x="8" y="8" width="${Math.max(0,x(peak)-8)}" height="8" rx="3" fill="#ea580c"/>
+                  ${markers}
+                  <text x="8" y="28" font-size="9" fill="currentColor">0</text>
+                  <text x="292" y="28" text-anchor="end" font-size="9" fill="currentColor">${max/1000} GW</text>
+                </svg>
+                <span style="color:#ea580c">■</span> Pointe prévue · <span style="color:#dc2626">│</span> Seuil(s) J-1
+              </div>`;
+            ]]]
+      - type: custom:bar-card
+        max: 100
+        decimal: 1
+        positions:
+          icon: 'off'
+          name: inside
+          value: inside
+        entities:
+          - entity: sensor.tempo_j4_p_bleu
+            name: Bleu
+            color: '#1e90ff'
+          - entity: sensor.tempo_j4_p_blanc
+            name: Blanc
+            color: '#dcdcdc'
+          - entity: sensor.tempo_j4_p_rouge
+            name: Rouge
+            color: '#ff4d4d'
+  - type: vertical-stack
+    cards:
+      - type: markdown
+        content: |-
+          {% set j = state_attr('sensor.tempo_prevision_simple', 'J+5') %}
+          {% set d = strptime(j.get('date', ''), '%Y-%m-%d', none) if j is mapping else none %}
+          {% set d = d if d is not none else (now().date() + timedelta(days=5)) %}
+          {% set jours = ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'] %}
+          {% set mois = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'] %}
+          ### Prévision pour le {{ jours[d.weekday()] }} {{ '1er' if d.day == 1 else d.day }} {{ mois[d.month-1] }}
+      - type: markdown
+        content: |-
+          {% set j = state_attr('sensor.tempo_prevision_simple', 'J+5') %}
+          {% set j = j if j is mapping else {} %}
+          {% set couleur = j.get('couleur') %}
+          {% set score = j.get('confidence_score') | int(0) %}
+          {% set r = j.get('p_rouge') %}
+          {% set w = j.get('p_blanc') %}
+          {% set b = j.get('p_bleu') %}
+          {% set source = j.get('modele') %}
+          {% set stars = '★' * score + '☆' * (5-score) if 0 <= score <= 5 else '☆☆☆☆☆' %}
+          {% if couleur not in ['bleu','blanc','rouge'] %}
+            {% set couleur = 'inconnue' %}
+            {% set comment = 'Données insuffisantes.' %}
+          {% elif source == 'override_RTE' %}
+            {% set comment = 'Couleur Tempo publiée.' %}
+          {% elif couleur == 'bleu' and r == 0 and b == 1 and w == 0 and (strptime(j.get('date', ''), '%Y-%m-%d', none) or (now().date() + timedelta(days=5))).weekday() == 6 %}
+            {% set comment = 'Dimanche : bleu certain.' %}
+          {% elif source == 'PP_OFFICIAL' and j.get('pp_status') == 'PP' and r == 1 %}
+            {% set comment = 'Signal PP publié : rouge attendu.' %}
+          {% elif r is none or w is none or b is none %}
+            {% set comment = 'Données insuffisantes.' %}
+          {% elif source == 'PP_MATRIX_CONSTRAINT' and r == 1 %}
+            {% set comment = 'Rouge imposé par la matrice PP.' %}
+          {% else %}
+            {% set ranked = [('bleu',b),('blanc',w),('rouge',r)] | sort(attribute='1', reverse=true) %}
+            {% set gap = ranked[0][1] - ranked[1][1] %}
+            {% if gap < 0.15 %}
+              {% set comment = 'Duel ' ~ ranked[0][0] ~ '/' ~ ranked[1][0] ~ ' : prévision sensible.' %}
+            {% elif couleur != 'rouge' and r >= 0.25 %}
+              {% set comment = 'Risque rouge significatif.' %}
+            {% elif r == 0 and source == 'PP_MATRIX_CONSTRAINT' %}
+              {% set comment = 'Rouge exclu par la matrice PP.' %}
+            {% elif gap >= 0.25 %}
+              {% set comment = 'Couleur nettement en tête.' %}
+            {% else %}
+              {% set comment = 'Couleur favorite, bascule possible.' %}
+            {% endif %}
+          {% endif %}
+          **Couleur {{ 'officielle' if source == 'override_RTE' else 'estimée' }} :** {{ couleur | capitalize }} - {{ comment }}<br>
+          **Confiance :** {{ stars }}{% if source != 'override_RTE' and score < 5 and j.get('gen_source') in ['estime_meteo_ENR','estime_mixte_ENR','estime_profil_horaire_ENR'] %} · {{ 'ENR météo' if j.get('gen_source') == 'estime_meteo_ENR' else 'ENR mixtes' if j.get('gen_source') == 'estime_mixte_ENR' else 'ENR extrapolées' }}{% endif %}
+          {% set peak = j.get('pp_peak_mw') %}
+          {% set ns = namespace(thresholds=[], blocked=false, forced=false, missing=false) %}
+          {% for entry in j.get('pp_thresholds', []) or [] %}
+            {% if entry is mapping and entry.get('weight', 0) > 0 %}
+              {% set t = entry.get('threshold_j1_mw') %}
+              {% if t == 'Infinity' %}
+                {% set ns.blocked = true %}
+              {% elif t == 0 %}
+                {% set ns.forced = true %}
+              {% elif t is number and t > 0 %}
+                {% set ns.thresholds = ns.thresholds + [t] %}
+              {% else %}
+                {% set ns.missing = true %}
+              {% endif %}
+            {% endif %}
+          {% endfor %}
+          {% if source == 'override_RTE' %}
+            {# La couleur officielle suffit. #}
+          {% elif j.get('pp_status') == 'PP' %}
+            <br>**PP :** signal officiel publié.
+          {% elif j.get('pp_status') == 'NON_PP' %}
+            <br>**PP :** non-PP confirmé.
+          {% elif r == 0 and source == 'PP_MATRIX_CONSTRAINT' %}
+            <br>**PP :** interdit (calendrier ou quota).
+          {% elif r == 1 and source == 'PP_MATRIX_CONSTRAINT' %}
+            <br>**PP :** obligatoire (apurement).
+          {% elif peak is number and ns.thresholds %}
+            {% set lo = ns.thresholds | min %}
+            {% set hi = ns.thresholds | max %}
+            <br>**Pointe PP :** {{ (peak / 1000) | round(1) }} GW · **Seuil J-1 :** {{ (lo / 1000) | round(1) }}{% if hi != lo %}–{{ (hi / 1000) | round(1) }}{% endif %} GW
+            <br>**Approche du seuil :** {% if hi != lo %}{{ (100 * peak / hi) | round(1) }}–{% endif %}{{ (100 * peak / lo) | round(1) }} %{% if ns.blocked or ns.forced or ns.missing %} (scénarios à seuil fini uniquement){% endif %}
+          {% else %}
+            <br>**Pointe PP :** données indisponibles.
+          {% endif %}
+        text_only: true
+      - type: custom:button-card
+        entity: sensor.tempo_prevision_simple
+        show_name: false
+        show_icon: false
+        show_state: false
+        show_label: false
+        tap_action:
+          action: none
+        hold_action:
+          action: none
+        styles:
+          card:
+            - background: transparent
+            - border: none
+            - box-shadow: none
+            - padding: 0px 12px 2px
+            - display: |
+                [[[
+                  const j = entity?.attributes?.['J+5'];
+                  if (!j || typeof j.pp_peak_mw !== 'number' || !Number.isFinite(j.pp_peak_mw) || j.pp_peak_mw < 0 || j.modele === 'override_RTE' || ['PP','NON_PP','NON-PP','NONPP'].includes(j.pp_status)) return 'none';
+                  return (Array.isArray(j.pp_thresholds) ? j.pp_thresholds : []).some(e => e && e.weight > 0 && typeof e.threshold_j1_mw === 'number' && Number.isFinite(e.threshold_j1_mw) && e.threshold_j1_mw > 0) ? 'block' : 'none';
+                ]]]
+          grid:
+            - grid-template-areas: '"gauge"'
+            - grid-template-columns: 1fr
+            - grid-template-rows: auto
+          custom_fields:
+            gauge:
+              - width: 100%
+              - min-width: 0
+              - justify-self: stretch
+        custom_fields:
+          gauge: |
+            [[[
+              const a = entity?.attributes || {};
+              const j = a['J+5'];
+              const valid = x => typeof x === 'number' && Number.isFinite(x);
+              const thresholds = day => [...new Set((Array.isArray(day?.pp_thresholds) ? day.pp_thresholds : [])
+                .filter(e => e && e.weight > 0 && valid(e.threshold_j1_mw) && e.threshold_j1_mw > 0)
+                .map(e => e.threshold_j1_mw))].sort((a,b) => a-b);
+              if (!j || !valid(j.pp_peak_mw) || j.pp_peak_mw < 0 || j.modele === 'override_RTE' || ['PP','NON_PP','NON-PP','NONPP'].includes(j.pp_status)) return '';
+              const ts = thresholds(j);
+              if (!ts.length) return '';
+              const peak = j.pp_peak_mw;
+              const values = [80000];
+              for (let n=1;n<=6;n++) {
+                const d = a['J+'+n];
+                if (d && valid(d.pp_peak_mw)) values.push(d.pp_peak_mw);
+                values.push(...thresholds(d));
+              }
+              const max = Math.ceil(Math.max(...values)*1.05/10000)*10000;
+              const x = v => 8 + 284*v/max;
+              const lo = ts[0], hi = ts[ts.length-1];
+              const fmt = v => (v/1000).toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1});
+              const markers = ts.map(t => `<line x1="${x(t)}" x2="${x(t)}" y1="4" y2="19" stroke="#dc2626" stroke-width="1.5"/>`).join('');
+              const range = hi>lo ? `<rect x="${x(lo)}" y="8" width="${x(hi)-x(lo)}" height="8" fill="#dc2626" opacity=".22"/>` : '';
+              return `<div style="width:100%;text-align:left;font-size:10px;line-height:1.25;color:var(--secondary-text-color);">
+                <svg viewBox="0 0 300 31" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;max-height:35px;display:block;" role="img" aria-label="Pointe ${fmt(peak)} GW, seuil ${fmt(lo)}${hi!==lo?' à '+fmt(hi):''} GW">
+                  <rect x="8" y="8" width="284" height="8" rx="3" fill="currentColor" opacity=".18"/>
+                  ${range}
+                  <rect x="8" y="8" width="${Math.max(0,x(peak)-8)}" height="8" rx="3" fill="#ea580c"/>
+                  ${markers}
+                  <text x="8" y="28" font-size="9" fill="currentColor">0</text>
+                  <text x="292" y="28" text-anchor="end" font-size="9" fill="currentColor">${max/1000} GW</text>
+                </svg>
+                <span style="color:#ea580c">■</span> Pointe prévue · <span style="color:#dc2626">│</span> Seuil(s) J-1
+              </div>`;
+            ]]]
+      - type: custom:bar-card
+        max: 100
+        decimal: 1
+        positions:
+          icon: 'off'
+          name: inside
+          value: inside
+        entities:
+          - entity: sensor.tempo_j5_p_bleu
+            name: Bleu
+            color: '#1e90ff'
+          - entity: sensor.tempo_j5_p_blanc
+            name: Blanc
+            color: '#dcdcdc'
+          - entity: sensor.tempo_j5_p_rouge
+            name: Rouge
+            color: '#ff4d4d'
+  - type: vertical-stack
+    cards:
+      - type: markdown
+        content: |-
+          {% set j = state_attr('sensor.tempo_prevision_simple', 'J+6') %}
+          {% set d = strptime(j.get('date', ''), '%Y-%m-%d', none) if j is mapping else none %}
+          {% set d = d if d is not none else (now().date() + timedelta(days=6)) %}
+          {% set jours = ['lundi','mardi','mercredi','jeudi','vendredi','samedi','dimanche'] %}
+          {% set mois = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'] %}
+          ### Prévision pour le {{ jours[d.weekday()] }} {{ '1er' if d.day == 1 else d.day }} {{ mois[d.month-1] }}
+      - type: markdown
+        content: |-
+          {% set j = state_attr('sensor.tempo_prevision_simple', 'J+6') %}
+          {% set j = j if j is mapping else {} %}
+          {% set couleur = j.get('couleur') %}
+          {% set score = j.get('confidence_score') | int(0) %}
+          {% set r = j.get('p_rouge') %}
+          {% set w = j.get('p_blanc') %}
+          {% set b = j.get('p_bleu') %}
+          {% set source = j.get('modele') %}
+          {% set stars = '★' * score + '☆' * (5-score) if 0 <= score <= 5 else '☆☆☆☆☆' %}
+          {% if couleur not in ['bleu','blanc','rouge'] %}
+            {% set couleur = 'inconnue' %}
+            {% set comment = 'Données insuffisantes.' %}
+          {% elif source == 'override_RTE' %}
+            {% set comment = 'Couleur Tempo publiée.' %}
+          {% elif couleur == 'bleu' and r == 0 and b == 1 and w == 0 and (strptime(j.get('date', ''), '%Y-%m-%d', none) or (now().date() + timedelta(days=6))).weekday() == 6 %}
+            {% set comment = 'Dimanche : bleu certain.' %}
+          {% elif source == 'PP_OFFICIAL' and j.get('pp_status') == 'PP' and r == 1 %}
+            {% set comment = 'Signal PP publié : rouge attendu.' %}
+          {% elif r is none or w is none or b is none %}
+            {% set comment = 'Données insuffisantes.' %}
+          {% elif source == 'PP_MATRIX_CONSTRAINT' and r == 1 %}
+            {% set comment = 'Rouge imposé par la matrice PP.' %}
+          {% else %}
+            {% set ranked = [('bleu',b),('blanc',w),('rouge',r)] | sort(attribute='1', reverse=true) %}
+            {% set gap = ranked[0][1] - ranked[1][1] %}
+            {% if gap < 0.15 %}
+              {% set comment = 'Duel ' ~ ranked[0][0] ~ '/' ~ ranked[1][0] ~ ' : prévision sensible.' %}
+            {% elif couleur != 'rouge' and r >= 0.25 %}
+              {% set comment = 'Risque rouge significatif.' %}
+            {% elif r == 0 and source == 'PP_MATRIX_CONSTRAINT' %}
+              {% set comment = 'Rouge exclu par la matrice PP.' %}
+            {% elif gap >= 0.25 %}
+              {% set comment = 'Couleur nettement en tête.' %}
+            {% else %}
+              {% set comment = 'Couleur favorite, bascule possible.' %}
+            {% endif %}
+          {% endif %}
+          **Couleur {{ 'officielle' if source == 'override_RTE' else 'estimée' }} :** {{ couleur | capitalize }} - {{ comment }}<br>
+          **Confiance :** {{ stars }}{% if source != 'override_RTE' and score < 5 and j.get('gen_source') in ['estime_meteo_ENR','estime_mixte_ENR','estime_profil_horaire_ENR'] %} · {{ 'ENR météo' if j.get('gen_source') == 'estime_meteo_ENR' else 'ENR mixtes' if j.get('gen_source') == 'estime_mixte_ENR' else 'ENR extrapolées' }}{% endif %}
+          {% set peak = j.get('pp_peak_mw') %}
+          {% set ns = namespace(thresholds=[], blocked=false, forced=false, missing=false) %}
+          {% for entry in j.get('pp_thresholds', []) or [] %}
+            {% if entry is mapping and entry.get('weight', 0) > 0 %}
+              {% set t = entry.get('threshold_j1_mw') %}
+              {% if t == 'Infinity' %}
+                {% set ns.blocked = true %}
+              {% elif t == 0 %}
+                {% set ns.forced = true %}
+              {% elif t is number and t > 0 %}
+                {% set ns.thresholds = ns.thresholds + [t] %}
+              {% else %}
+                {% set ns.missing = true %}
+              {% endif %}
+            {% endif %}
+          {% endfor %}
+          {% if source == 'override_RTE' %}
+            {# La couleur officielle suffit. #}
+          {% elif j.get('pp_status') == 'PP' %}
+            <br>**PP :** signal officiel publié.
+          {% elif j.get('pp_status') == 'NON_PP' %}
+            <br>**PP :** non-PP confirmé.
+          {% elif r == 0 and source == 'PP_MATRIX_CONSTRAINT' %}
+            <br>**PP :** interdit (calendrier ou quota).
+          {% elif r == 1 and source == 'PP_MATRIX_CONSTRAINT' %}
+            <br>**PP :** obligatoire (apurement).
+          {% elif peak is number and ns.thresholds %}
+            {% set lo = ns.thresholds | min %}
+            {% set hi = ns.thresholds | max %}
+            <br>**Pointe PP :** {{ (peak / 1000) | round(1) }} GW · **Seuil J-1 :** {{ (lo / 1000) | round(1) }}{% if hi != lo %}–{{ (hi / 1000) | round(1) }}{% endif %} GW
+            <br>**Approche du seuil :** {% if hi != lo %}{{ (100 * peak / hi) | round(1) }}–{% endif %}{{ (100 * peak / lo) | round(1) }} %{% if ns.blocked or ns.forced or ns.missing %} (scénarios à seuil fini uniquement){% endif %}
+          {% else %}
+            <br>**Pointe PP :** données indisponibles.
+          {% endif %}
+        text_only: true
+      - type: custom:button-card
+        entity: sensor.tempo_prevision_simple
+        show_name: false
+        show_icon: false
+        show_state: false
+        show_label: false
+        tap_action:
+          action: none
+        hold_action:
+          action: none
+        styles:
+          card:
+            - background: transparent
+            - border: none
+            - box-shadow: none
+            - padding: 0px 12px 2px
+            - display: |
+                [[[
+                  const j = entity?.attributes?.['J+6'];
+                  if (!j || typeof j.pp_peak_mw !== 'number' || !Number.isFinite(j.pp_peak_mw) || j.pp_peak_mw < 0 || j.modele === 'override_RTE' || ['PP','NON_PP','NON-PP','NONPP'].includes(j.pp_status)) return 'none';
+                  return (Array.isArray(j.pp_thresholds) ? j.pp_thresholds : []).some(e => e && e.weight > 0 && typeof e.threshold_j1_mw === 'number' && Number.isFinite(e.threshold_j1_mw) && e.threshold_j1_mw > 0) ? 'block' : 'none';
+                ]]]
+          grid:
+            - grid-template-areas: '"gauge"'
+            - grid-template-columns: 1fr
+            - grid-template-rows: auto
+          custom_fields:
+            gauge:
+              - width: 100%
+              - min-width: 0
+              - justify-self: stretch
+        custom_fields:
+          gauge: |
+            [[[
+              const a = entity?.attributes || {};
+              const j = a['J+6'];
+              const valid = x => typeof x === 'number' && Number.isFinite(x);
+              const thresholds = day => [...new Set((Array.isArray(day?.pp_thresholds) ? day.pp_thresholds : [])
+                .filter(e => e && e.weight > 0 && valid(e.threshold_j1_mw) && e.threshold_j1_mw > 0)
+                .map(e => e.threshold_j1_mw))].sort((a,b) => a-b);
+              if (!j || !valid(j.pp_peak_mw) || j.pp_peak_mw < 0 || j.modele === 'override_RTE' || ['PP','NON_PP','NON-PP','NONPP'].includes(j.pp_status)) return '';
+              const ts = thresholds(j);
+              if (!ts.length) return '';
+              const peak = j.pp_peak_mw;
+              const values = [80000];
+              for (let n=1;n<=6;n++) {
+                const d = a['J+'+n];
+                if (d && valid(d.pp_peak_mw)) values.push(d.pp_peak_mw);
+                values.push(...thresholds(d));
+              }
+              const max = Math.ceil(Math.max(...values)*1.05/10000)*10000;
+              const x = v => 8 + 284*v/max;
+              const lo = ts[0], hi = ts[ts.length-1];
+              const fmt = v => (v/1000).toLocaleString('fr-FR',{minimumFractionDigits:1,maximumFractionDigits:1});
+              const markers = ts.map(t => `<line x1="${x(t)}" x2="${x(t)}" y1="4" y2="19" stroke="#dc2626" stroke-width="1.5"/>`).join('');
+              const range = hi>lo ? `<rect x="${x(lo)}" y="8" width="${x(hi)-x(lo)}" height="8" fill="#dc2626" opacity=".22"/>` : '';
+              return `<div style="width:100%;text-align:left;font-size:10px;line-height:1.25;color:var(--secondary-text-color);">
+                <svg viewBox="0 0 300 31" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;max-height:35px;display:block;" role="img" aria-label="Pointe ${fmt(peak)} GW, seuil ${fmt(lo)}${hi!==lo?' à '+fmt(hi):''} GW">
+                  <rect x="8" y="8" width="284" height="8" rx="3" fill="currentColor" opacity=".18"/>
+                  ${range}
+                  <rect x="8" y="8" width="${Math.max(0,x(peak)-8)}" height="8" rx="3" fill="#ea580c"/>
+                  ${markers}
+                  <text x="8" y="28" font-size="9" fill="currentColor">0</text>
+                  <text x="292" y="28" text-anchor="end" font-size="9" fill="currentColor">${max/1000} GW</text>
+                </svg>
+                <span style="color:#ea580c">■</span> Pointe prévue · <span style="color:#dc2626">│</span> Seuil(s) J-1
+              </div>`;
+            ]]]
+      - type: custom:bar-card
+        max: 100
+        decimal: 1
+        positions:
+          icon: 'off'
+          name: inside
+          value: inside
+        entities:
+          - entity: sensor.tempo_j6_p_bleu
+            name: Bleu
+            color: '#1e90ff'
+          - entity: sensor.tempo_j6_p_blanc
+            name: Blanc
+            color: '#dcdcdc'
+          - entity: sensor.tempo_j6_p_rouge
+            name: Rouge
+            color: '#ff4d4d'
+  - type: markdown
+    content: |-
+      <small>
+      Actualisation selon le scan_interval ou les horaires de l'automatisation configurée.<br>
+      Rouge : matrices Bellman officielles et pointe résiduelle ; bleu/blanc : consommation nette moyenne, stocks et météo.<br>
+      L'approche du seuil PP compare la pointe résiduelle prévue au seuil J-1. Une plage représente les différents stocks PP possibles ; ce ratio n'est pas une probabilité de rouge.<br>
+      Mini-jauge : orange = pointe prévue, traits rouges = seuils J-1 possibles selon le stock. Échelle commune aux six jours.<br>
+      Les probabilités et les étoiles de confiance restent indicatives et non calibrées statistiquement. Les couleurs Tempo publiées sont officielles. ENR météo : estimation horaire Open-Meteo non calibrée ; ENR extrapolées : profil RTE antérieur ; ENR mixtes : combinaison des deux.
+      </small>
+    text_only: true
+    grid_options:
+      rows: auto
+      columns: 36
+column_span: 3
+columns: 3

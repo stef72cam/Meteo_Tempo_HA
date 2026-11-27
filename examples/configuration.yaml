@@ -1,3 +1,5 @@
+# Remplacer uniquement la définition existante du capteur command_line TEMPO.
+# Si command_line existe déjà, fusionner les entrées, ne pas recréer la clé.
 command_line:
   - sensor:
       name: tempo_prevision_simple
@@ -7,7 +9,8 @@ command_line:
         {{ states('sensor.rte_tempo_cycle_jours_restants_blanc') }}
         {{ states('sensor.rte_tempo_cycle_jours_restants_bleu') }}
         {{ states('sensor.rte_tempo_prochaine_couleur') }}
-      scan_interval: 86400
+      command_timeout: 90
+      scan_interval: 7200
       json_attributes:
         - J+1
         - J+2
@@ -16,708 +19,365 @@ command_line:
         - J+5
         - J+6
         - generated_at
+        - version
+        - diagnostics
         - error
-      value_template: "ok"
+      value_template: "{{ 'error' if value_json.get('error') else 'ok' }}"
 
+# Remplacer les anciens capteurs Tempo correspondants, sans dupliquer template:.
 template:
-
-  - sensor:
-      - name: tempo_j1_couleur
-        unique_id: tempo_j1_couleur
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+1') %}
-          {% if j %}
-            {{ j.couleur }}
-          {% else %}
-            inconnue
-          {% endif %}
-          
-  - sensor:
-      - name: tempo_j1_p_rouge
-        unique_id: tempo_j1_p_rouge
-        unit_of_measurement: "%"
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+1') %}
-          {% if j and j.p_rouge is not none %}
-            {{ (j.p_rouge * 100) | round(1) }}
-          {% else %}
-            0
-          {% endif %}
-          
-  - sensor:
-      - name: tempo_j1_p_blanc
-        unique_id: tempo_j1_p_blanc
-        unit_of_measurement: "%"
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+1') %}
-          {% if j and j.p_blanc is not none %}
-            {{ (j.p_blanc * 100) | round(1) }}
-          {% else %}
-            0
-          {% endif %}
-          
   - sensor:
       - name: tempo_j1_p_bleu
         unique_id: tempo_j1_p_bleu
         unit_of_measurement: "%"
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+1') %}
+          {{ j is mapping and j.get('p_bleu') is not none }}
         state: >
           {% set j = state_attr('sensor.tempo_prevision_simple','J+1') %}
-          {% if j and j.p_bleu is not none %}
-            {{ (j.p_bleu * 100) | round(1) }}
-          {% else %}
-            0
-          {% endif %}
-
-  - sensor:
-      - name: tempo_j2_couleur
-        unique_id: tempo_j2_couleur
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+2') %}
-          {% if j %}
-            {{ j.couleur }}
-          {% else %}
-            inconnue
-          {% endif %}
-
-  - sensor:
-      - name: tempo_j2_p_rouge
-        unique_id: tempo_j2_p_rouge
+          {{ (j.get('p_bleu') * 100) | round(1) if j is mapping and j.get('p_bleu') is not none else none }}
+      - name: tempo_j1_p_blanc
+        unique_id: tempo_j1_p_blanc
         unit_of_measurement: "%"
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+1') %}
+          {{ j is mapping and j.get('p_blanc') is not none }}
         state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+2') %}
-          {% if j and j.p_rouge is not none %}
-            {{ (j.p_rouge * 100) | round(1) }}
-          {% else %}
-            0
-          {% endif %}
-
-  - sensor:
-      - name: tempo_j2_p_blanc
-        unique_id: tempo_j2_p_blanc
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+1') %}
+          {{ (j.get('p_blanc') * 100) | round(1) if j is mapping and j.get('p_blanc') is not none else none }}
+      - name: tempo_j1_p_rouge
+        unique_id: tempo_j1_p_rouge
         unit_of_measurement: "%"
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+1') %}
+          {{ j is mapping and j.get('p_rouge') is not none }}
         state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+2') %}
-          {% if j and j.p_blanc is not none %}
-            {{ (j.p_blanc * 100) | round(1) }}
-          {% else %}
-            0
-          {% endif %}
-
-  - sensor:
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+1') %}
+          {{ (j.get('p_rouge') * 100) | round(1) if j is mapping and j.get('p_rouge') is not none else none }}
+      - name: tempo_j1_couleur
+        unique_id: tempo_j1_couleur
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+1') %}
+          {{ j is mapping and j.get('couleur') is not none }}
+        state: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+1') %}
+          {{ j.get('couleur') if j is mapping and j.get('couleur') is not none else none }}
+      - name: tempo_j1_conf_score
+        unique_id: tempo_j1_conf_score
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+1') %}
+          {{ j is mapping and j.get('confidence_score') is not none }}
+        state: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+1') %}
+          {{ j.get('confidence_score') if j is mapping and j.get('confidence_score') is not none else none }}
+      - name: tempo_j1_conf_label
+        unique_id: tempo_j1_conf_label
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+1') %}
+          {{ j is mapping and j.get('confidence_label') is not none }}
+        state: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+1') %}
+          {{ j.get('confidence_label') if j is mapping and j.get('confidence_label') is not none else none }}
+      - name: tempo_j1_conf_comment
+        unique_id: tempo_j1_conf_comment
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+1') %}
+          {{ j is mapping and j.get('confidence_comment') is not none }}
+        state: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+1') %}
+          {{ j.get('confidence_comment') if j is mapping and j.get('confidence_comment') is not none else none }}
       - name: tempo_j2_p_bleu
         unique_id: tempo_j2_p_bleu
         unit_of_measurement: "%"
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+2') %}
+          {{ j is mapping and j.get('p_bleu') is not none }}
         state: >
           {% set j = state_attr('sensor.tempo_prevision_simple','J+2') %}
-          {% if j and j.p_bleu is not none %}
-            {{ (j.p_bleu * 100) | round(1) }}
-          {% else %}
-            0
-          {% endif %}
-
-  - sensor:
-      - name: tempo_j3_couleur
-        unique_id: tempo_j3_couleur
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+3') %}
-          {% if j %}
-            {{ j.couleur }}
-          {% else %}
-            inconnue
-          {% endif %}
-
-  - sensor:
-      - name: tempo_j3_p_rouge
-        unique_id: tempo_j3_p_rouge
+          {{ (j.get('p_bleu') * 100) | round(1) if j is mapping and j.get('p_bleu') is not none else none }}
+      - name: tempo_j2_p_blanc
+        unique_id: tempo_j2_p_blanc
         unit_of_measurement: "%"
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+2') %}
+          {{ j is mapping and j.get('p_blanc') is not none }}
         state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+3') %}
-          {% if j and j.p_rouge is not none %}
-            {{ (j.p_rouge * 100) | round(1) }}
-          {% else %}
-            0
-          {% endif %}
-
-  - sensor:
-      - name: tempo_j3_p_blanc
-        unique_id: tempo_j3_p_blanc
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+2') %}
+          {{ (j.get('p_blanc') * 100) | round(1) if j is mapping and j.get('p_blanc') is not none else none }}
+      - name: tempo_j2_p_rouge
+        unique_id: tempo_j2_p_rouge
         unit_of_measurement: "%"
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+2') %}
+          {{ j is mapping and j.get('p_rouge') is not none }}
         state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+3') %}
-          {% if j and j.p_blanc is not none %}
-            {{ (j.p_blanc * 100) | round(1) }}
-          {% else %}
-            0
-          {% endif %}
-
-  - sensor:
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+2') %}
+          {{ (j.get('p_rouge') * 100) | round(1) if j is mapping and j.get('p_rouge') is not none else none }}
+      - name: tempo_j2_couleur
+        unique_id: tempo_j2_couleur
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+2') %}
+          {{ j is mapping and j.get('couleur') is not none }}
+        state: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+2') %}
+          {{ j.get('couleur') if j is mapping and j.get('couleur') is not none else none }}
+      - name: tempo_j2_conf_score
+        unique_id: tempo_j2_conf_score
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+2') %}
+          {{ j is mapping and j.get('confidence_score') is not none }}
+        state: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+2') %}
+          {{ j.get('confidence_score') if j is mapping and j.get('confidence_score') is not none else none }}
+      - name: tempo_j2_conf_label
+        unique_id: tempo_j2_conf_label
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+2') %}
+          {{ j is mapping and j.get('confidence_label') is not none }}
+        state: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+2') %}
+          {{ j.get('confidence_label') if j is mapping and j.get('confidence_label') is not none else none }}
+      - name: tempo_j2_conf_comment
+        unique_id: tempo_j2_conf_comment
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+2') %}
+          {{ j is mapping and j.get('confidence_comment') is not none }}
+        state: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+2') %}
+          {{ j.get('confidence_comment') if j is mapping and j.get('confidence_comment') is not none else none }}
       - name: tempo_j3_p_bleu
         unique_id: tempo_j3_p_bleu
         unit_of_measurement: "%"
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+3') %}
+          {{ j is mapping and j.get('p_bleu') is not none }}
         state: >
           {% set j = state_attr('sensor.tempo_prevision_simple','J+3') %}
-          {% if j and j.p_bleu is not none %}
-            {{ (j.p_bleu * 100) | round(1) }}
-          {% else %}
-            0
-          {% endif %}
-
-  - sensor:
-      - name: tempo_j4_couleur
-        unique_id: tempo_j4_couleur
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+4') %}
-          {% if j %}
-            {{ j.couleur }}
-          {% else %}
-            inconnue
-          {% endif %}
-
-  - sensor:
-      - name: tempo_j4_p_rouge
-        unique_id: tempo_j4_p_rouge
+          {{ (j.get('p_bleu') * 100) | round(1) if j is mapping and j.get('p_bleu') is not none else none }}
+      - name: tempo_j3_p_blanc
+        unique_id: tempo_j3_p_blanc
         unit_of_measurement: "%"
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+3') %}
+          {{ j is mapping and j.get('p_blanc') is not none }}
         state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+4') %}
-          {% if j and j.p_rouge is not none %}
-            {{ (j.p_rouge * 100) | round(1) }}
-          {% else %}
-            0
-          {% endif %}
-
-  - sensor:
-      - name: tempo_j4_p_blanc
-        unique_id: tempo_j4_p_blanc
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+3') %}
+          {{ (j.get('p_blanc') * 100) | round(1) if j is mapping and j.get('p_blanc') is not none else none }}
+      - name: tempo_j3_p_rouge
+        unique_id: tempo_j3_p_rouge
         unit_of_measurement: "%"
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+3') %}
+          {{ j is mapping and j.get('p_rouge') is not none }}
         state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+4') %}
-          {% if j and j.p_blanc is not none %}
-            {{ (j.p_blanc * 100) | round(1) }}
-          {% else %}
-            0
-          {% endif %}
-
-  - sensor:
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+3') %}
+          {{ (j.get('p_rouge') * 100) | round(1) if j is mapping and j.get('p_rouge') is not none else none }}
+      - name: tempo_j3_couleur
+        unique_id: tempo_j3_couleur
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+3') %}
+          {{ j is mapping and j.get('couleur') is not none }}
+        state: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+3') %}
+          {{ j.get('couleur') if j is mapping and j.get('couleur') is not none else none }}
+      - name: tempo_j3_conf_score
+        unique_id: tempo_j3_conf_score
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+3') %}
+          {{ j is mapping and j.get('confidence_score') is not none }}
+        state: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+3') %}
+          {{ j.get('confidence_score') if j is mapping and j.get('confidence_score') is not none else none }}
+      - name: tempo_j3_conf_label
+        unique_id: tempo_j3_conf_label
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+3') %}
+          {{ j is mapping and j.get('confidence_label') is not none }}
+        state: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+3') %}
+          {{ j.get('confidence_label') if j is mapping and j.get('confidence_label') is not none else none }}
+      - name: tempo_j3_conf_comment
+        unique_id: tempo_j3_conf_comment
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+3') %}
+          {{ j is mapping and j.get('confidence_comment') is not none }}
+        state: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+3') %}
+          {{ j.get('confidence_comment') if j is mapping and j.get('confidence_comment') is not none else none }}
       - name: tempo_j4_p_bleu
         unique_id: tempo_j4_p_bleu
         unit_of_measurement: "%"
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+4') %}
+          {{ j is mapping and j.get('p_bleu') is not none }}
         state: >
           {% set j = state_attr('sensor.tempo_prevision_simple','J+4') %}
-          {% if j and j.p_bleu is not none %}
-            {{ (j.p_bleu * 100) | round(1) }}
-          {% else %}
-            0
-          {% endif %}
-
-  - sensor:
-      - name: tempo_j5_couleur
-        unique_id: tempo_j5_couleur
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+5') %}
-          {% if j %}
-            {{ j.couleur }}
-          {% else %}
-            inconnue
-          {% endif %}
-
-  - sensor:
-      - name: tempo_j5_p_rouge
-        unique_id: tempo_j5_p_rouge
+          {{ (j.get('p_bleu') * 100) | round(1) if j is mapping and j.get('p_bleu') is not none else none }}
+      - name: tempo_j4_p_blanc
+        unique_id: tempo_j4_p_blanc
         unit_of_measurement: "%"
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+4') %}
+          {{ j is mapping and j.get('p_blanc') is not none }}
         state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+5') %}
-          {% if j and j.p_rouge is not none %}
-            {{ (j.p_rouge * 100) | round(1) }}
-          {% else %}
-            0
-          {% endif %}
-
-  - sensor:
-      - name: tempo_j5_p_blanc
-        unique_id: tempo_j5_p_blanc
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+4') %}
+          {{ (j.get('p_blanc') * 100) | round(1) if j is mapping and j.get('p_blanc') is not none else none }}
+      - name: tempo_j4_p_rouge
+        unique_id: tempo_j4_p_rouge
         unit_of_measurement: "%"
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+4') %}
+          {{ j is mapping and j.get('p_rouge') is not none }}
         state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+5') %}
-          {% if j and j.p_blanc is not none %}
-            {{ (j.p_blanc * 100) | round(1) }}
-          {% else %}
-            0
-          {% endif %}
-
-  - sensor:
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+4') %}
+          {{ (j.get('p_rouge') * 100) | round(1) if j is mapping and j.get('p_rouge') is not none else none }}
+      - name: tempo_j4_couleur
+        unique_id: tempo_j4_couleur
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+4') %}
+          {{ j is mapping and j.get('couleur') is not none }}
+        state: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+4') %}
+          {{ j.get('couleur') if j is mapping and j.get('couleur') is not none else none }}
+      - name: tempo_j4_conf_score
+        unique_id: tempo_j4_conf_score
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+4') %}
+          {{ j is mapping and j.get('confidence_score') is not none }}
+        state: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+4') %}
+          {{ j.get('confidence_score') if j is mapping and j.get('confidence_score') is not none else none }}
+      - name: tempo_j4_conf_label
+        unique_id: tempo_j4_conf_label
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+4') %}
+          {{ j is mapping and j.get('confidence_label') is not none }}
+        state: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+4') %}
+          {{ j.get('confidence_label') if j is mapping and j.get('confidence_label') is not none else none }}
+      - name: tempo_j4_conf_comment
+        unique_id: tempo_j4_conf_comment
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+4') %}
+          {{ j is mapping and j.get('confidence_comment') is not none }}
+        state: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+4') %}
+          {{ j.get('confidence_comment') if j is mapping and j.get('confidence_comment') is not none else none }}
       - name: tempo_j5_p_bleu
         unique_id: tempo_j5_p_bleu
         unit_of_measurement: "%"
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+5') %}
+          {{ j is mapping and j.get('p_bleu') is not none }}
         state: >
           {% set j = state_attr('sensor.tempo_prevision_simple','J+5') %}
-          {% if j and j.p_bleu is not none %}
-            {{ (j.p_bleu * 100) | round(1) }}
-          {% else %}
-            0
-          {% endif %}
-
-
-  - sensor:
+          {{ (j.get('p_bleu') * 100) | round(1) if j is mapping and j.get('p_bleu') is not none else none }}
+      - name: tempo_j5_p_blanc
+        unique_id: tempo_j5_p_blanc
+        unit_of_measurement: "%"
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+5') %}
+          {{ j is mapping and j.get('p_blanc') is not none }}
+        state: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+5') %}
+          {{ (j.get('p_blanc') * 100) | round(1) if j is mapping and j.get('p_blanc') is not none else none }}
+      - name: tempo_j5_p_rouge
+        unique_id: tempo_j5_p_rouge
+        unit_of_measurement: "%"
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+5') %}
+          {{ j is mapping and j.get('p_rouge') is not none }}
+        state: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+5') %}
+          {{ (j.get('p_rouge') * 100) | round(1) if j is mapping and j.get('p_rouge') is not none else none }}
+      - name: tempo_j5_couleur
+        unique_id: tempo_j5_couleur
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+5') %}
+          {{ j is mapping and j.get('couleur') is not none }}
+        state: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+5') %}
+          {{ j.get('couleur') if j is mapping and j.get('couleur') is not none else none }}
+      - name: tempo_j5_conf_score
+        unique_id: tempo_j5_conf_score
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+5') %}
+          {{ j is mapping and j.get('confidence_score') is not none }}
+        state: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+5') %}
+          {{ j.get('confidence_score') if j is mapping and j.get('confidence_score') is not none else none }}
+      - name: tempo_j5_conf_label
+        unique_id: tempo_j5_conf_label
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+5') %}
+          {{ j is mapping and j.get('confidence_label') is not none }}
+        state: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+5') %}
+          {{ j.get('confidence_label') if j is mapping and j.get('confidence_label') is not none else none }}
+      - name: tempo_j5_conf_comment
+        unique_id: tempo_j5_conf_comment
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+5') %}
+          {{ j is mapping and j.get('confidence_comment') is not none }}
+        state: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+5') %}
+          {{ j.get('confidence_comment') if j is mapping and j.get('confidence_comment') is not none else none }}
       - name: tempo_j6_p_bleu
         unique_id: tempo_j6_p_bleu
         unit_of_measurement: "%"
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+6') %}
+          {{ j is mapping and j.get('p_bleu') is not none }}
         state: >
           {% set j = state_attr('sensor.tempo_prevision_simple','J+6') %}
-          {% if not j %}
-            0
-          {% else %}
-            {{ (j.p_bleu|float(0) * 100)|round(1) }}
-          {% endif %}
-
-  - sensor:
-      - name: tempo_j6_couleur
-        unique_id: tempo_j6_couleur
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+6') %}
-          {% if j %}
-            {{ j.couleur }}
-          {% else %}
-            inconnue
-          {% endif %}
-          
-  - sensor:
+          {{ (j.get('p_bleu') * 100) | round(1) if j is mapping and j.get('p_bleu') is not none else none }}
       - name: tempo_j6_p_blanc
         unique_id: tempo_j6_p_blanc
         unit_of_measurement: "%"
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+6') %}
+          {{ j is mapping and j.get('p_blanc') is not none }}
         state: >
           {% set j = state_attr('sensor.tempo_prevision_simple','J+6') %}
-          {% if not j %}
-            0
-          {% else %}
-            {{ (j.p_blanc|float(0) * 100)|round(1) }}
-          {% endif %}
-
-  - sensor:
+          {{ (j.get('p_blanc') * 100) | round(1) if j is mapping and j.get('p_blanc') is not none else none }}
       - name: tempo_j6_p_rouge
         unique_id: tempo_j6_p_rouge
         unit_of_measurement: "%"
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+6') %}
+          {{ j is mapping and j.get('p_rouge') is not none }}
         state: >
           {% set j = state_attr('sensor.tempo_prevision_simple','J+6') %}
-          {% if not j %}
-            0
-          {% else %}
-            {{ (j.p_rouge|float(0) * 100)|round(1) }}
-          {% endif %}
-
-
-  - sensor:
-      - name: "Tempo indice tension J+1"
-        unique_id: tempo_indice_tension_j1
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple', 'J+1') %}
-          {% if j %}
-            {{ j['z'] | float(0) | round(2) }}
-          {% else %}
-            unknown
-          {% endif %}
-        unit_of_measurement: "Z"
-
-  - sensor:
-      - name: "Tempo indice tension J+2"
-        unique_id: tempo_indice_tension_j2
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple', 'J+2') %}
-          {% if j %}
-            {{ j['z'] | float(0) | round(2) }}
-          {% else %}
-            unknown
-          {% endif %}
-        unit_of_measurement: "Z"
-
-  - sensor:
-      - name: "Tempo indice tension J+3"
-        unique_id: tempo_indice_tension_j3
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple', 'J+3') %}
-          {% if j %}
-            {{ j['z'] | float(0) | round(2) }}
-          {% else %}
-            unknown
-          {% endif %}
-        unit_of_measurement: "Z"
-
-      - name: "Tempo indice tension J+4"
-        unique_id: tempo_indice_tension_j4
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple', 'J+4') %}
-          {% if j %}
-            {{ j['z'] | float(0) | round(2) }}
-          {% else %}
-            unknown
-          {% endif %}
-        unit_of_measurement: "Z"
-
-  - sensor:
-      - name: "Tempo indice tension J+5"
-        unique_id: tempo_indice_tension_j5
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple', 'J+5') %}
-          {% if j %}
-            {{ j['z'] | float(0) | round(2) }}
-          {% else %}
-            unknown
-          {% endif %}
-        unit_of_measurement: "Z"
-
-  - sensor:
-      - name: "Tempo indice tension J+6"
-        unique_id: tempo_indice_tension_j6
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple', 'J+6') %}
-          {% if j %}
-            {{ j['z'] | float(0) | round(2) }}
-          {% else %}
-            unknown
-          {% endif %}
-        unit_of_measurement: "Z"
-
-
-  - sensor:
-      - name: "Tempo niveau tension J+1"
-        unique_id: tempo_niveau_tension_j1
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+1') %}
-          {% if not j or j.z is none %}
-            unknown
-          {% else %}
-            {% set z = j.z | float(0) %}
-
-            {% if z < 0.6 %}
-              vert
-            {% elif z < 1.0 %}
-              jaune
-            {% elif z < 1.3 %}
-              orange
-            {% elif z < 1.8 %}
-              rouge
-            {% else %}
-              violet
-            {% endif %}
-          {% endif %}
-
-
-  - sensor:
-      - name: "Tempo niveau tension J+2"
-        unique_id: tempo_niveau_tension_j2
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+2') %}
-          {% if not j or j.z is none %}
-            unknown
-          {% else %}
-            {% set z = j.z | float(0) %}
-
-            {% if z < 0.6 %}
-              vert
-            {% elif z < 1.0 %}
-              jaune
-            {% elif z < 1.3 %}
-              orange
-            {% elif z < 1.8 %}
-              rouge
-            {% else %}
-              violet
-            {% endif %}
-          {% endif %}
-
-
-  - sensor:
-      - name: "Tempo niveau tension J+3"
-        unique_id: tempo_niveau_tension_j3
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+3') %}
-          {% if not j or j.z is none %}
-            unknown
-          {% else %}
-            {% set z = j.z | float(0) %}
-
-            {% if z < 0.6 %}
-              vert
-            {% elif z < 1.0 %}
-              jaune
-            {% elif z < 1.3 %}
-              orange
-            {% elif z < 1.8 %}
-              rouge
-            {% else %}
-              violet
-            {% endif %}
-          {% endif %}
-
-
-  - sensor:
-      - name: "Tempo niveau tension J+4"
-        unique_id: tempo_niveau_tension_j4
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+4') %}
-          {% if not j or j.z is none %}
-            unknown
-          {% else %}
-            {% set z = j.z | float(0) %}
-
-            {% if z < 0.6 %}
-              vert
-            {% elif z < 1.0 %}
-              jaune
-            {% elif z < 1.3 %}
-              orange
-            {% elif z < 1.8 %}
-              rouge
-            {% else %}
-              violet
-            {% endif %}
-          {% endif %}
-
-
-  - sensor:
-      - name: "Tempo niveau tension J+5"
-        unique_id: tempo_niveau_tension_j5
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+5') %}
-          {% if not j or j.z is none %}
-            unknown
-          {% else %}
-            {% set z = j.z | float(0) %}
-
-            {% if z < 0.6 %}
-              vert
-            {% elif z < 1.0 %}
-              jaune
-            {% elif z < 1.3 %}
-              orange
-            {% elif z < 1.8 %}
-              rouge
-            {% else %}
-              violet
-            {% endif %}
-          {% endif %}
-
-
-  - sensor:
-      - name: "Tempo niveau tension J+6"
-        unique_id: tempo_niveau_tension_j6
+          {{ (j.get('p_rouge') * 100) | round(1) if j is mapping and j.get('p_rouge') is not none else none }}
+      - name: tempo_j6_couleur
+        unique_id: tempo_j6_couleur
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+6') %}
+          {{ j is mapping and j.get('couleur') is not none }}
         state: >
           {% set j = state_attr('sensor.tempo_prevision_simple','J+6') %}
-          {% if not j or j.z is none %}
-            unknown
-          {% else %}
-            {% set z = j.z | float(0) %}
-
-            {% if z < 0.6 %}
-              vert
-            {% elif z < 1.0 %}
-              jaune
-            {% elif z < 1.3 %}
-              orange
-            {% elif z < 1.8 %}
-              rouge
-            {% else %}
-              violet
-            {% endif %}
-          {% endif %}
-
-
-          
-  - sensor:
-      - name: tempo_j1_conf_score
-        unique_id: tempo_j1_conf_score
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+1') %}
-          {% if j and j.confidence_score is not none %}
-            {{ j.confidence_score }}
-          {% else %}
-            0
-          {% endif %}
-
-  - sensor:
-      - name: tempo_j2_conf_score
-        unique_id: tempo_j2_conf_score
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+2') %}
-          {% if j and j.confidence_score is not none %}
-            {{ j.confidence_score }}
-          {% else %}
-            0
-          {% endif %}
-
-  - sensor:
-      - name: tempo_j3_conf_score
-        unique_id: tempo_j3_conf_score
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+3') %}
-          {% if j and j.confidence_score is not none %}
-            {{ j.confidence_score }}
-          {% else %}
-            0
-          {% endif %}
-
-  - sensor:
-      - name: tempo_j4_conf_score
-        unique_id: tempo_j4_conf_score
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+4') %}
-          {% if j and j.confidence_score is not none %}
-            {{ j.confidence_score }}
-          {% else %}
-            0
-          {% endif %}
-
-  - sensor:
-      - name: tempo_j5_conf_score
-        unique_id: tempo_j5_conf_score
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+5') %}
-          {% if j and j.confidence_score is not none %}
-            {{ j.confidence_score }}
-          {% else %}
-            0
-          {% endif %}
-
-  - sensor:
+          {{ j.get('couleur') if j is mapping and j.get('couleur') is not none else none }}
       - name: tempo_j6_conf_score
         unique_id: tempo_j6_conf_score
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+6') %}
+          {{ j is mapping and j.get('confidence_score') is not none }}
         state: >
           {% set j = state_attr('sensor.tempo_prevision_simple','J+6') %}
-          {% if j and j.confidence_score is not none %}
-            {{ j.confidence_score }}
-          {% else %}
-            0
-          {% endif %}
-
-  - sensor:
-      - name: tempo_j1_conf_label
-        unique_id: tempo_j1_conf_label
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+1') %}
-          {% if j and j.confidence_label is not none %}
-            {{ j.confidence_label }}
-          {% else %}
-            inconnue
-          {% endif %}
-
-  - sensor:
-      - name: tempo_j2_conf_label
-        unique_id: tempo_j2_conf_label
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+2') %}
-          {% if j and j.confidence_label is not none %}
-            {{ j.confidence_label }}
-          {% else %}
-            inconnue
-          {% endif %}
-
-  - sensor:
-      - name: tempo_j3_conf_label
-        unique_id: tempo_j3_conf_label
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+3') %}
-          {% if j and j.confidence_label is not none %}
-            {{ j.confidence_label }}
-          {% else %}
-            inconnue
-          {% endif %}
-
-  - sensor:
-      - name: tempo_j4_conf_label
-        unique_id: tempo_j4_conf_label
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+4') %}
-          {% if j and j.confidence_label is not none %}
-            {{ j.confidence_label }}
-          {% else %}
-            inconnue
-          {% endif %}
-
-  - sensor:
-      - name: tempo_j5_conf_label
-        unique_id: tempo_j5_conf_label
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+5') %}
-          {% if j and j.confidence_label is not none %}
-            {{ j.confidence_label }}
-          {% else %}
-            inconnue
-          {% endif %}
-
-  - sensor:
+          {{ j.get('confidence_score') if j is mapping and j.get('confidence_score') is not none else none }}
       - name: tempo_j6_conf_label
         unique_id: tempo_j6_conf_label
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+6') %}
+          {{ j is mapping and j.get('confidence_label') is not none }}
         state: >
           {% set j = state_attr('sensor.tempo_prevision_simple','J+6') %}
-          {% if j and j.confidence_label is not none %}
-            {{ j.confidence_label }}
-          {% else %}
-            inconnue
-          {% endif %}
-
-
-  - sensor:
-      - name: tempo_j1_conf_comment
-        unique_id: tempo_j1_conf_comment
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+1') %}
-          {% if j and j.confidence_comment is not none %}
-            {{ j.confidence_comment }}
-          {% else %}
-            ""
-          {% endif %}
-          
-  - sensor:
-      - name: tempo_j2_conf_comment
-        unique_id: tempo_j2_conf_comment
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+2') %}
-          {% if j and j.confidence_comment is not none %}
-            {{ j.confidence_comment }}
-          {% else %}
-            ""
-          {% endif %}
-
-  - sensor:
-      - name: tempo_j3_conf_comment
-        unique_id: tempo_j3_conf_comment
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+3') %}
-          {% if j and j.confidence_comment is not none %}
-            {{ j.confidence_comment }}
-          {% else %}
-            ""
-          {% endif %}
-
-  - sensor:
-      - name: tempo_j4_conf_comment
-        unique_id: tempo_j4_conf_comment
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+4') %}
-          {% if j and j.confidence_comment is not none %}
-            {{ j.confidence_comment }}
-          {% else %}
-            ""
-          {% endif %}
-
-  - sensor:
-      - name: tempo_j5_conf_comment
-        unique_id: tempo_j5_conf_comment
-        state: >
-          {% set j = state_attr('sensor.tempo_prevision_simple','J+5') %}
-          {% if j and j.confidence_comment is not none %}
-            {{ j.confidence_comment }}
-          {% else %}
-            ""
-          {% endif %}
-
-  - sensor:
+          {{ j.get('confidence_label') if j is mapping and j.get('confidence_label') is not none else none }}
       - name: tempo_j6_conf_comment
         unique_id: tempo_j6_conf_comment
+        availability: >
+          {% set j = state_attr('sensor.tempo_prevision_simple','J+6') %}
+          {{ j is mapping and j.get('confidence_comment') is not none }}
         state: >
           {% set j = state_attr('sensor.tempo_prevision_simple','J+6') %}
-          {% if j and j.confidence_comment is not none %}
-            {{ j.confidence_comment }}
-          {% else %}
-            ""
-          {% endif %}
-
+          {{ j.get('confidence_comment') if j is mapping and j.get('confidence_comment') is not none else none }}

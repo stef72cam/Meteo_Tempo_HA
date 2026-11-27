@@ -1,0 +1,677 @@
+{
+  "J+1": {
+    "date": "2026-11-28",
+    "couleur": "blanc",
+    "modele": "override_RTE",
+    "c_mw": null,
+    "gen_mw": 8883.6,
+    "gen_source": "estime_meteo_ENR",
+    "c_net_mw": null,
+    "c_net_tempo_mw": 52284.1,
+    "white_bellman_bonus": 0.0,
+    "white_bellman_bonus_conditional": null,
+    "z": 2.886,
+    "z_raw": 2.886,
+    "z_source": "fallback_std",
+    "T_nat": 4.97,
+    "T_norm": 6.36,
+    "delta_T": -1.39,
+    "meteo_bias": 0.03,
+    "red_remaining": 21,
+    "white_remaining": 37,
+    "blue_remaining": 218,
+    "p_bleu": 0.0,
+    "p_blanc": 1.0,
+    "p_rouge": 0.0,
+    "confidence_score": 5,
+    "confidence_label": "Très forte",
+    "confidence_comment": "Couleur Tempo publiée.",
+    "red_deadline_pressure": null,
+    "pp_status": "PENDING",
+    "pp_source": "PP_history",
+    "pp_probability": 0.0,
+    "pp_peak_mw": null,
+    "pp_thresholds": [
+      {
+        "pp_used": 1,
+        "weight": 1.0,
+        "threshold_j1_mw": "Infinity",
+        "threshold_j2_mw": "Infinity",
+        "reason": "TEMPO_NON_RED_PP_PROXY",
+        "crosses_j1": null,
+        "crosses_j2": null
+      }
+    ],
+    "pp_early_probability_indicative": null,
+    "pp_reason": "TEMPO_NON_RED_PP_PROXY",
+    "pp_stock_expected_after": 1.0,
+    "expected_remaining": {
+      "rouge": 21.0,
+      "blanc": 37.0,
+      "bleu": 218.0
+    },
+    "stock_uncertain": false,
+    "data_quality": {
+      "gen_profile_dates": [],
+      "gen_rte_hours": 0,
+      "gen_weather_hours": 24,
+      "gen_persistence_hours": 0,
+      "gen_component_sources": {
+        "WIND_ONSHORE": {
+          "RTE": 0,
+          "meteo": 24
+        },
+        "WIND_OFFSHORE": {
+          "RTE": 0,
+          "meteo": 24
+        },
+        "SOLAR": {
+          "RTE": 0,
+          "meteo": 24
+        }
+      },
+      "hours": 23,
+      "matched_hours": 0,
+      "expected_hours": 24,
+      "tempo_hours": 24,
+      "tempo_expected_hours": 24,
+      "white_net_source": "06h-06h",
+      "probabilities_calibrated": false,
+      "notes": [
+        "ENR estimees par modele meteo regional non calibre ; incertitude majoree."
+      ]
+    }
+  },
+  "J+2": {
+    "date": "2026-11-29",
+    "couleur": "bleu",
+    "modele": "PP_MATRIX_CONSTRAINT",
+    "c_mw": 59029.0,
+    "gen_mw": 3676.8,
+    "gen_source": "estime_meteo_ENR",
+    "c_net_mw": 55352.2,
+    "c_net_tempo_mw": 55218.3,
+    "white_bellman_bonus": 0.0,
+    "white_bellman_bonus_conditional": 0.0,
+    "z": 4.245,
+    "z_raw": 4.245,
+    "z_source": "fallback_std",
+    "T_nat": 6.43,
+    "T_norm": 6.53,
+    "delta_T": -0.1,
+    "meteo_bias": 0.0,
+    "red_remaining": 21,
+    "white_remaining": 37,
+    "blue_remaining": 217,
+    "p_bleu": 1.0,
+    "p_blanc": 0.0,
+    "p_rouge": 0.0,
+    "confidence_score": 5,
+    "confidence_label": "Très forte",
+    "confidence_comment": "Probabilités indicatives, non calibrées.",
+    "red_deadline_pressure": null,
+    "pp_status": "PENDING",
+    "pp_source": "PP_history",
+    "pp_probability": 0.0,
+    "pp_peak_mw": 63539.0,
+    "pp_thresholds": [
+      {
+        "pp_used": 1,
+        "weight": 1.0,
+        "threshold_j1_mw": "Infinity",
+        "threshold_j2_mw": "Infinity",
+        "reason": "CALENDAR_BLOCK",
+        "crosses_j1": false,
+        "crosses_j2": false
+      }
+    ],
+    "pp_early_probability_indicative": 0.0,
+    "pp_reason": "CALENDAR_BLOCK",
+    "pp_stock_expected_after": 1.0,
+    "expected_remaining": {
+      "rouge": 21.0,
+      "blanc": 37.0,
+      "bleu": 217.0
+    },
+    "stock_uncertain": false,
+    "data_quality": {
+      "gen_profile_dates": [],
+      "gen_rte_hours": 0,
+      "gen_weather_hours": 24,
+      "gen_persistence_hours": 0,
+      "gen_component_sources": {
+        "WIND_ONSHORE": {
+          "RTE": 0,
+          "meteo": 24
+        },
+        "WIND_OFFSHORE": {
+          "RTE": 0,
+          "meteo": 24
+        },
+        "SOLAR": {
+          "RTE": 0,
+          "meteo": 24
+        }
+      },
+      "hours": 24,
+      "matched_hours": 24,
+      "expected_hours": 24,
+      "tempo_hours": 24,
+      "tempo_expected_hours": 24,
+      "white_net_source": "06h-06h",
+      "probabilities_calibrated": false,
+      "notes": [
+        "ENR estimees par modele meteo regional non calibre ; incertitude majoree."
+      ]
+    }
+  },
+  "J+3": {
+    "date": "2026-11-30",
+    "couleur": "blanc",
+    "modele": "modele_interne",
+    "c_mw": 63172.2,
+    "gen_mw": 3910.5,
+    "gen_source": "estime_meteo_ENR",
+    "c_net_mw": 59261.7,
+    "c_net_tempo_mw": 60312.1,
+    "white_bellman_bonus": 0.007,
+    "white_bellman_bonus_conditional": 0.0135,
+    "z": 6.603,
+    "z_raw": 6.603,
+    "z_source": "fallback_std",
+    "T_nat": 5.47,
+    "T_norm": 6.73,
+    "delta_T": -1.26,
+    "meteo_bias": 0.03,
+    "red_remaining": 21,
+    "white_remaining": 36,
+    "blue_remaining": 217,
+    "p_bleu": 0.024,
+    "p_blanc": 0.495,
+    "p_rouge": 0.481,
+    "confidence_score": 1,
+    "confidence_label": "Très faible",
+    "confidence_comment": "Probabilités indicatives, non calibrées.",
+    "red_deadline_pressure": null,
+    "pp_status": "PENDING",
+    "pp_source": "PP_history",
+    "pp_probability": 0.4805,
+    "pp_peak_mw": 68472.6,
+    "pp_thresholds": [
+      {
+        "pp_used": 1,
+        "weight": 1.0,
+        "threshold_j1_mw": 68730.0,
+        "threshold_j2_mw": 70104.0,
+        "reason": "BELLMAN_CALCULATED_THRESHOLD",
+        "crosses_j1": false,
+        "crosses_j2": false
+      }
+    ],
+    "pp_early_probability_indicative": null,
+    "pp_reason": "BELLMAN_CALCULATED_THRESHOLD",
+    "pp_stock_expected_after": 1.481,
+    "expected_remaining": {
+      "rouge": 20.519,
+      "blanc": 36.505,
+      "bleu": 216.976
+    },
+    "stock_uncertain": false,
+    "data_quality": {
+      "gen_profile_dates": [],
+      "gen_rte_hours": 0,
+      "gen_weather_hours": 24,
+      "gen_persistence_hours": 0,
+      "gen_component_sources": {
+        "WIND_ONSHORE": {
+          "RTE": 0,
+          "meteo": 24
+        },
+        "WIND_OFFSHORE": {
+          "RTE": 0,
+          "meteo": 24
+        },
+        "SOLAR": {
+          "RTE": 0,
+          "meteo": 24
+        }
+      },
+      "hours": 24,
+      "matched_hours": 24,
+      "expected_hours": 24,
+      "tempo_hours": 24,
+      "tempo_expected_hours": 24,
+      "white_net_source": "06h-06h",
+      "probabilities_calibrated": false,
+      "notes": [
+        "ENR estimees par modele meteo regional non calibre ; incertitude majoree."
+      ]
+    }
+  },
+  "J+4": {
+    "date": "2026-12-01",
+    "couleur": "blanc",
+    "modele": "modele_interne",
+    "c_mw": 65655.0,
+    "gen_mw": 5315.8,
+    "gen_source": "estime_meteo_ENR",
+    "c_net_mw": 60339.1,
+    "c_net_tempo_mw": 59691.1,
+    "white_bellman_bonus": 0.0138,
+    "white_bellman_bonus_conditional": 0.0222,
+    "z": 6.315,
+    "z_raw": 6.315,
+    "z_source": "fallback_std",
+    "T_nat": 6.27,
+    "T_norm": 6.53,
+    "delta_T": -0.26,
+    "meteo_bias": 0.0,
+    "red_remaining": 21,
+    "white_remaining": 35,
+    "blue_remaining": 217,
+    "p_bleu": 0.07,
+    "p_blanc": 0.551,
+    "p_rouge": 0.379,
+    "confidence_score": 1,
+    "confidence_label": "Très faible",
+    "confidence_comment": "Probabilités indicatives, non calibrées.",
+    "red_deadline_pressure": null,
+    "pp_status": "PENDING",
+    "pp_source": "PP_history",
+    "pp_probability": 0.3785,
+    "pp_peak_mw": 67371.0,
+    "pp_thresholds": [
+      {
+        "pp_used": 1,
+        "weight": 0.024157,
+        "threshold_j1_mw": 68217.0,
+        "threshold_j2_mw": 69581.0,
+        "reason": "BELLMAN_CALCULATED_THRESHOLD",
+        "crosses_j1": false,
+        "crosses_j2": false
+      },
+      {
+        "pp_used": 1,
+        "weight": 0.495335,
+        "threshold_j1_mw": 68217.0,
+        "threshold_j2_mw": 69581.0,
+        "reason": "BELLMAN_CALCULATED_THRESHOLD",
+        "crosses_j1": false,
+        "crosses_j2": false
+      },
+      {
+        "pp_used": 2,
+        "weight": 0.480508,
+        "threshold_j1_mw": 70683.0,
+        "threshold_j2_mw": 72096.0,
+        "reason": "BELLMAN_CALCULATED_THRESHOLD",
+        "crosses_j1": false,
+        "crosses_j2": false
+      }
+    ],
+    "pp_early_probability_indicative": null,
+    "pp_reason": "BELLMAN_CALCULATED_THRESHOLD",
+    "pp_stock_expected_after": 1.859,
+    "expected_remaining": {
+      "rouge": 20.141,
+      "blanc": 35.953,
+      "bleu": 216.906
+    },
+    "stock_uncertain": false,
+    "data_quality": {
+      "gen_profile_dates": [],
+      "gen_rte_hours": 0,
+      "gen_weather_hours": 24,
+      "gen_persistence_hours": 0,
+      "gen_component_sources": {
+        "WIND_ONSHORE": {
+          "RTE": 0,
+          "meteo": 24
+        },
+        "WIND_OFFSHORE": {
+          "RTE": 0,
+          "meteo": 24
+        },
+        "SOLAR": {
+          "RTE": 0,
+          "meteo": 24
+        }
+      },
+      "hours": 24,
+      "matched_hours": 24,
+      "expected_hours": 24,
+      "tempo_hours": 24,
+      "tempo_expected_hours": 24,
+      "white_net_source": "06h-06h",
+      "probabilities_calibrated": false,
+      "notes": [
+        "ENR estimees par modele meteo regional non calibre ; incertitude majoree."
+      ]
+    }
+  },
+  "J+5": {
+    "date": "2026-12-02",
+    "couleur": "blanc",
+    "modele": "modele_interne",
+    "c_mw": 65182.6,
+    "gen_mw": 8347.3,
+    "gen_source": "estime_meteo_ENR",
+    "c_net_mw": 56835.4,
+    "c_net_tempo_mw": 56188.9,
+    "white_bellman_bonus": 0.0129,
+    "white_bellman_bonus_conditional": 0.0162,
+    "z": 4.694,
+    "z_raw": 4.694,
+    "z_source": "fallback_std",
+    "T_nat": 7.09,
+    "T_norm": 6.41,
+    "delta_T": 0.68,
+    "meteo_bias": 0.03,
+    "red_remaining": 21,
+    "white_remaining": 34,
+    "blue_remaining": 217,
+    "p_bleu": 0.155,
+    "p_blanc": 0.644,
+    "p_rouge": 0.201,
+    "confidence_score": 1,
+    "confidence_label": "Très faible",
+    "confidence_comment": "Probabilités indicatives, non calibrées.",
+    "red_deadline_pressure": null,
+    "pp_status": "PENDING",
+    "pp_source": "PP_history",
+    "pp_probability": 0.2005,
+    "pp_peak_mw": 63771.0,
+    "pp_thresholds": [
+      {
+        "pp_used": 1,
+        "weight": 0.001459,
+        "threshold_j1_mw": 67604.0,
+        "threshold_j2_mw": 68956.0,
+        "reason": "BELLMAN_CALCULATED_THRESHOLD",
+        "crosses_j1": false,
+        "crosses_j2": false
+      },
+      {
+        "pp_used": 1,
+        "weight": 0.0418,
+        "threshold_j1_mw": 67604.0,
+        "threshold_j2_mw": 68956.0,
+        "reason": "BELLMAN_CALCULATED_THRESHOLD",
+        "crosses_j1": false,
+        "crosses_j2": false
+      },
+      {
+        "pp_used": 2,
+        "weight": 0.049563,
+        "threshold_j1_mw": 70038.0,
+        "threshold_j2_mw": 71438.0,
+        "reason": "BELLMAN_CALCULATED_THRESHOLD",
+        "crosses_j1": false,
+        "crosses_j2": false
+      },
+      {
+        "pp_used": 1,
+        "weight": 0.243615,
+        "threshold_j1_mw": 67604.0,
+        "threshold_j2_mw": 68956.0,
+        "reason": "BELLMAN_CALCULATED_THRESHOLD",
+        "crosses_j1": false,
+        "crosses_j2": false
+      },
+      {
+        "pp_used": 2,
+        "weight": 0.517656,
+        "threshold_j1_mw": 70038.0,
+        "threshold_j2_mw": 71438.0,
+        "reason": "BELLMAN_CALCULATED_THRESHOLD",
+        "crosses_j1": false,
+        "crosses_j2": false
+      },
+      {
+        "pp_used": 3,
+        "weight": 0.145906,
+        "threshold_j1_mw": 73576.0,
+        "threshold_j2_mw": 75047.0,
+        "reason": "BELLMAN_CALCULATED_THRESHOLD",
+        "crosses_j1": false,
+        "crosses_j2": false
+      }
+    ],
+    "pp_early_probability_indicative": null,
+    "pp_reason": "BELLMAN_CALCULATED_THRESHOLD",
+    "pp_stock_expected_after": 2.06,
+    "expected_remaining": {
+      "rouge": 19.94,
+      "blanc": 35.309,
+      "bleu": 216.751
+    },
+    "stock_uncertain": false,
+    "data_quality": {
+      "gen_profile_dates": [],
+      "gen_rte_hours": 0,
+      "gen_weather_hours": 24,
+      "gen_persistence_hours": 0,
+      "gen_component_sources": {
+        "WIND_ONSHORE": {
+          "RTE": 0,
+          "meteo": 24
+        },
+        "WIND_OFFSHORE": {
+          "RTE": 0,
+          "meteo": 24
+        },
+        "SOLAR": {
+          "RTE": 0,
+          "meteo": 24
+        }
+      },
+      "hours": 24,
+      "matched_hours": 24,
+      "expected_hours": 24,
+      "tempo_hours": 24,
+      "tempo_expected_hours": 24,
+      "white_net_source": "06h-06h",
+      "probabilities_calibrated": false,
+      "notes": [
+        "ENR estimees par modele meteo regional non calibre ; incertitude majoree."
+      ]
+    }
+  },
+  "J+6": {
+    "date": "2026-12-03",
+    "couleur": "blanc",
+    "modele": "modele_interne",
+    "c_mw": 63974.6,
+    "gen_mw": 7011.5,
+    "gen_source": "estime_meteo_ENR",
+    "c_net_mw": 56963.2,
+    "c_net_tempo_mw": 57431.1,
+    "white_bellman_bonus": 0.0128,
+    "white_bellman_bonus_conditional": 0.0168,
+    "z": 5.269,
+    "z_raw": 5.269,
+    "z_source": "fallback_std",
+    "T_nat": 6.65,
+    "T_norm": 6.42,
+    "delta_T": 0.23,
+    "meteo_bias": 0.0,
+    "red_remaining": 21,
+    "white_remaining": 33,
+    "blue_remaining": 217,
+    "p_bleu": 0.159,
+    "p_blanc": 0.604,
+    "p_rouge": 0.237,
+    "confidence_score": 1,
+    "confidence_label": "Très faible",
+    "confidence_comment": "Probabilités indicatives, non calibrées.",
+    "red_deadline_pressure": null,
+    "pp_status": "PENDING",
+    "pp_source": "PP_history",
+    "pp_probability": 0.2375,
+    "pp_peak_mw": 63995.6,
+    "pp_thresholds": [
+      {
+        "pp_used": 1,
+        "weight": 0.000192,
+        "threshold_j1_mw": 66873.0,
+        "threshold_j2_mw": 68210.0,
+        "reason": "BELLMAN_CALCULATED_THRESHOLD",
+        "crosses_j1": false,
+        "crosses_j2": false
+      },
+      {
+        "pp_used": 1,
+        "weight": 0.006336,
+        "threshold_j1_mw": 66873.0,
+        "threshold_j2_mw": 68210.0,
+        "reason": "BELLMAN_CALCULATED_THRESHOLD",
+        "crosses_j1": false,
+        "crosses_j2": false
+      },
+      {
+        "pp_used": 2,
+        "weight": 0.00827,
+        "threshold_j1_mw": 69432.0,
+        "threshold_j2_mw": 70820.0,
+        "reason": "BELLMAN_CALCULATED_THRESHOLD",
+        "crosses_j1": false,
+        "crosses_j2": false
+      },
+      {
+        "pp_used": 1,
+        "weight": 0.056126,
+        "threshold_j1_mw": 66873.0,
+        "threshold_j2_mw": 68210.0,
+        "reason": "BELLMAN_CALCULATED_THRESHOLD",
+        "crosses_j1": false,
+        "crosses_j2": false
+      },
+      {
+        "pp_used": 2,
+        "weight": 0.126668,
+        "threshold_j1_mw": 69432.0,
+        "threshold_j2_mw": 70820.0,
+        "reason": "BELLMAN_CALCULATED_THRESHOLD",
+        "crosses_j1": false,
+        "crosses_j2": false
+      },
+      {
+        "pp_used": 3,
+        "weight": 0.036778,
+        "threshold_j1_mw": 72720.0,
+        "threshold_j2_mw": 74174.0,
+        "reason": "BELLMAN_CALCULATED_THRESHOLD",
+        "crosses_j1": false,
+        "crosses_j2": false
+      },
+      {
+        "pp_used": 1,
+        "weight": 0.140488,
+        "threshold_j1_mw": 66873.0,
+        "threshold_j2_mw": 68210.0,
+        "reason": "BELLMAN_CALCULATED_THRESHOLD",
+        "crosses_j1": false,
+        "crosses_j2": false
+      },
+      {
+        "pp_used": 2,
+        "weight": 0.410981,
+        "threshold_j1_mw": 69432.0,
+        "threshold_j2_mw": 70820.0,
+        "reason": "BELLMAN_CALCULATED_THRESHOLD",
+        "crosses_j1": false,
+        "crosses_j2": false
+      },
+      {
+        "pp_used": 3,
+        "weight": 0.202413,
+        "threshold_j1_mw": 72720.0,
+        "threshold_j2_mw": 74174.0,
+        "reason": "BELLMAN_CALCULATED_THRESHOLD",
+        "crosses_j1": false,
+        "crosses_j2": false
+      },
+      {
+        "pp_used": 4,
+        "weight": 0.011749,
+        "threshold_j1_mw": 77548.0,
+        "threshold_j2_mw": 79098.0,
+        "reason": "BELLMAN_CALCULATED_THRESHOLD",
+        "crosses_j1": false,
+        "crosses_j2": false
+      }
+    ],
+    "pp_early_probability_indicative": null,
+    "pp_reason": "BELLMAN_CALCULATED_THRESHOLD",
+    "pp_stock_expected_after": 2.297,
+    "expected_remaining": {
+      "rouge": 19.703,
+      "blanc": 34.705,
+      "bleu": 216.592
+    },
+    "stock_uncertain": false,
+    "data_quality": {
+      "gen_profile_dates": [],
+      "gen_rte_hours": 0,
+      "gen_weather_hours": 24,
+      "gen_persistence_hours": 0,
+      "gen_component_sources": {
+        "WIND_ONSHORE": {
+          "RTE": 0,
+          "meteo": 24
+        },
+        "WIND_OFFSHORE": {
+          "RTE": 0,
+          "meteo": 24
+        },
+        "SOLAR": {
+          "RTE": 0,
+          "meteo": 24
+        }
+      },
+      "hours": 24,
+      "matched_hours": 24,
+      "expected_hours": 24,
+      "tempo_hours": 24,
+      "tempo_expected_hours": 24,
+      "white_net_source": "06h-06h",
+      "probabilities_calibrated": false,
+      "notes": [
+        "ENR estimees par modele meteo regional non calibre ; incertitude majoree."
+      ]
+    }
+  },
+  "generated_at": "2026-11-27T13:04:54.353232+01:00",
+  "version": "2.1.0",
+  "diagnostics": {
+    "warnings": [],
+    "matrices_loaded": [
+      "2627_j1",
+      "2627_j2"
+    ],
+    "probabilities_calibrated": false,
+    "enr_model": {
+      "enabled": true,
+      "land_points": 20,
+      "sea_points": 6,
+      "capacity_mw": {
+        "WIND_ONSHORE": 24500.0,
+        "WIND_OFFSHORE": 2300.0,
+        "SOLAR": 34300.0
+      },
+      "weather_hours_by_component": {
+        "WIND_ONSHORE": 239,
+        "SOLAR": 239,
+        "WIND_OFFSHORE": 239
+      },
+      "calibrated": false
+    },
+    "tempo_stock_source": "Tempo_history",
+    "tempo_stock_at_end_today": {
+      "rouge": 21,
+      "blanc": 38,
+      "bleu": 218
+    }
+  },
+  "error": null
+}
